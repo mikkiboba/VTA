@@ -1,0 +1,8 @@
+# Build artifacts tvm
+3rparty/tvm/build/
+
+# Build my stuff
+build/
+*.o
+*.so
+
