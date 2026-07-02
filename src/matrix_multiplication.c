@@ -15,11 +15,11 @@
 
 int main(void) {
     printf("Initialization of the instruction pipeline (%d instructions)\n", N_INSTRUCTIONS);
-
+ 
     // * allocamento
     int inpSize = N_TILES * VTA_BATCH * VTA_BLOCK_IN * sizeof(int8_t);
     int wgtSize = N_TILES * VTA_BLOCK_IN * VTA_BLOCK_OUT * sizeof(int8_t);
-    int outSize = N_TILES * VTA_BATCH * VTA_BLOCK_OUT * sizeof(int8_t);
+    int outSize = VTA_BATCH * VTA_BLOCK_OUT * sizeof(int8_t);
 
     int uopSize = N_UOPS * sizeof(VTAUop);
     int insnSize = INSN_QUEUE_SIZE * sizeof(VTAGenericInsn);
@@ -56,7 +56,7 @@ int main(void) {
     weights[34] = 1;
 
 
-    int outElements = N_TILES * VTA_BATCH * VTA_BLOCK_OUT;
+    int outElements = VTA_BATCH * VTA_BLOCK_OUT;
     for (int i = 0; i < outElements; i++) {
         outputs[i] = 0;
     }
@@ -89,10 +89,10 @@ int main(void) {
         N_TILES, N_TILES, N_TILES, 0, 0, 0, 1);
 
     // * i3: gemm reset 1
-    gemmInsn(insnsQ, insnCount++, VTA_OPCODE_GEMM, 1, 0, 1, N_TILES, 1, 1, 1, 1, 1, 0, 0, 0);
+    gemmInsn(insnsQ, insnCount++, VTA_OPCODE_GEMM, 1, 0, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0);
 
     // * i4: gemm reset 0
-    gemmInsn(insnsQ, insnCount++, VTA_OPCODE_GEMM, 0, 0, 1, N_TILES, 1, 1, 1, 1, 0, 0, 0, 1);
+    gemmInsn(insnsQ, insnCount++, VTA_OPCODE_GEMM, 0, 0, 1, N_TILES, 1, 0, 1, 1, 0, 0, 0, 1);
 
     // * i5: store
     memInsn(insnsQ, insnCount++, VTA_OPCODE_STORE, VTA_MEM_ID_OUT, 0, phyOut / VTA_OUT_ELEM_BYTES, N_TILES, 1, N_TILES, 1, 0, 1, 0);
@@ -106,11 +106,20 @@ int main(void) {
 
     printf("Execution of commands in the VTA simuator...\n");
     VTADeviceHandle device = VTADeviceAlloc();
+        for (int i = 0; i < insnCount; i++) {
+    uint64_t *raw = (uint64_t *)&insnsQ[i];
+
+    printf("%2d : %016lx %016lx\n",
+           i,
+           (unsigned long)raw[0],
+           (unsigned long)raw[1]);
+}
+    VTADeviceRun(device, phyInsn, insnCount, 1000000);
     VTADeviceRun(device, phyInsn, N_INSTRUCTIONS, 1000000);
 
     printf("Finished the execution of commands. The results are waiting in memory.\n");
 
-    int n_el = 256;
+    int n_el = VTA_BATCH * VTA_BLOCK_OUT;
     printf("First %d of the OUTPUT buffer loaded: \n", n_el);
     for (int i = 0; i < n_el; i++) {
         if (i > 0 && i % 16 == 0) printf("\n");
