@@ -1,6 +1,7 @@
 #include "insnMaker.h"
 
 #include <string.h>
+#include <stdio.h>
 
 
 void memInsn( 

@@ -69,5 +69,4 @@ void gemmInsn(
     int push_next
 );
 
-
 #endif
