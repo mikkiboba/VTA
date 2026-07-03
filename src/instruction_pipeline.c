@@ -51,7 +51,7 @@ int main(void) {
     insn0->sram_base = 0;
     insn0->dram_base = phyUop / VTA_UOP_ELEM_BYTES;
     insn0->y_size = 1;
-    insn0->x_size = 2; // <-- Carica sia uops[0] che uops[1]
+    insn0->x_size = 2; 
     insn0->x_stride = 2;
 
     // * i1: LOAD INPUT
@@ -70,10 +70,10 @@ int main(void) {
     insn2->memory_type = VTA_MEM_ID_WGT;
     insn2->sram_base = 0;
     insn2->dram_base = phyWgt / VTA_WGT_ELEM_BYTES;
-    insn2->y_size = 1;  // <-- IL BUG ERA QUI! Ora carica i 16 elementi corretti
+    insn2->y_size = 1; 
     insn2->x_size = 16;
     insn2->x_stride = 16;
-    insn2->push_next_dep = 1; // Sblocca la Compute!
+    insn2->push_next_dep = 1;
 
 
     // * i3: GEMM 1
@@ -87,7 +87,7 @@ int main(void) {
     insn3->dst_factor_out = 1;
     insn3->src_factor_out = 1;
     insn3->wgt_factor_out = 1;
-    insn3->pop_prev_dep = 1; // Aspetta i dati dal Load
+    insn3->pop_prev_dep = 1; 
 
 
     // * i4: GEMM 2
@@ -101,7 +101,7 @@ int main(void) {
     insn4->dst_factor_out = 1;
     insn4->src_factor_out = 1;
     insn4->wgt_factor_out = 1;
-    insn4->push_next_dep = 1; // Sblocca la Store!
+    insn4->push_next_dep = 1;
 
 
     // * i5: STORE
@@ -113,14 +113,14 @@ int main(void) {
     insn5->y_size = 1;
     insn5->x_size = 16;
     insn5->x_stride = 16;
-    insn5->pop_prev_dep = 1;  // Aspetta i calcoli
-    insn5->push_prev_dep = 1; // Conferma alla Compute
+    insn5->pop_prev_dep = 1;  
+    insn5->push_prev_dep = 1; 
 
 
     // * i6: NOP 
     VTAGemInsn* insn6 = (VTAGemInsn*)&insnQ[6];
     insn6->opcode = VTA_OPCODE_GEMM;
-    insn6->pop_next_dep = 1;  // Aspetta la conferma dalla Store
+    insn6->pop_next_dep = 1;  
 
 
     // * i7: FINISH
