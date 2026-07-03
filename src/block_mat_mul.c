@@ -14,9 +14,7 @@
 #define N_UOPS 1
 #define INSN_QUEUE_SIZE 1024
 
-int main(void) {
-    printf("Inizializzazione della pipeline VTA per MatMul Blocking...\n");
- 
+int main(void) { 
     int inpSize, wgtSize, outSize;
     inpSize = M_TILES * K_TILES * VTA_BATCH * VTA_BLOCK_IN      * sizeof(int8_t);
     wgtSize = N_TILES * K_TILES * VTA_BLOCK_IN * VTA_BLOCK_OUT  * sizeof(int8_t);
@@ -100,13 +98,13 @@ int main(void) {
 
     memInsn(insnsQ, IC++, VTA_OPCODE_FINISH, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
 
-    printf("Generazione completata. Totale istruzioni: %d\n", IC);
-    printf("Esecuzione sul simulatore VTA...\n");
+    printf("Toal instructions: %d\n", IC);
+    printf("Exec VTA simulator...\n");
     
     VTADeviceHandle device = VTADeviceAlloc();
     VTADeviceRun(device, phyInsn, IC, 1000000);
 
-    printf("Esecuzione terminata. Verifica dell'intero tensore di output (%d blocchi calcolati):\n", M_TILES * N_TILES);
+    printf("Output:\n");
 
     int n_el;
     n_el = M_TILES * N_TILES * VTA_BATCH * VTA_BLOCK_OUT;
