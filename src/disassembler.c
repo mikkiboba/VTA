@@ -4,6 +4,7 @@
 #include <vta/hw_spec.h>
 
 
+/*! \brief Temporary memory to keep track of which UOP has a label*/
 typedef struct {
     uint32_t bgn;
     uint32_t end;
@@ -82,6 +83,7 @@ void printPush(const VTAGenericInsn* insn) {
 }
 
 
+/*! \brief Disassemble instructions to convert them in text*/
 void disassemble(const VTAGenericInsn* insnBuffer, int numInsn, const VTAUop* uopBuffer) {
     int labelCounter;
     labelCounter = 1;
