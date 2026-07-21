@@ -24,6 +24,7 @@ mkdir -p "$SCRIPT_DIR/build"
 # 🌟 CORREZIONE: Estrae i flag hardware corretti dalla posizione reale di vta-hw
 VTA_CFLAGS=$(python3 "$TVM_DIR/3rdparty/vta-hw/config/vta_config.py" --cflags)
 
+#"$SCRIPT_DIR/src/tiledHelper.c" 
 gcc \
     $VTA_CFLAGS \
     -g -O0 \
@@ -31,11 +32,14 @@ gcc \
     -I"$TVM_DIR/include" \
     -I"$TVM_DIR/3rdparty/vta-hw/include" \
     -I"$TVM_DIR/3rdparty/dlpack/include" \
+    "$SCRIPT_DIR/src/main.c" \
     "$SCRIPT_DIR/src/insnMaker.c" \
-    "$SCRIPT_DIR/src/my_mat_mul.c" \
+    "$SCRIPT_DIR/src/disassembler.c" \
     -L"$TVM_BUILD_DIR" -lvta_fsim -ltvm \
     -o "$SCRIPT_DIR/build/gemm_test"
 
 echo ">>> Build completata: build/gemm_test"
 echo ">>> Esegui con:"
 echo "    LD_LIBRARY_PATH=$TVM_BUILD_DIR ./build/gemm_test"
+echo ">>> Per debug:"
+echo "    LD_LIBRARY_PATH=$TVM_BUILD_DIR gdb ./build/gemm_test"
