@@ -10,7 +10,9 @@ typedef struct {
     int labelID;
 } UopLabelTracker;
 
-
+/*! \brief Helper function to print POP (stage1->stage2)
+    \param insn Instruction to work on
+*/
 void printPop(const VTAGenericInsn* insn) {
     if (!insn->pop_prev_dep && !insn->pop_next_dep) return;
 
@@ -44,6 +46,9 @@ void printPop(const VTAGenericInsn* insn) {
 }
 
 
+/*! \brief Helper function to print PUSH (stage1->stage2)
+    \param insn Instruction to work on
+*/
 void printPush(const VTAGenericInsn* insn) {
     if (!insn->push_prev_dep && !insn->push_next_dep) return;
 
