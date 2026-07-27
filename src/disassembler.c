@@ -11,6 +11,24 @@ typedef struct {
     int labelID;
 } UopLabelTracker;
 
+
+int findOrCreateLabel(UopLabelTracker* labels, int* numLabels, uint32_t bgn, uint32_t end, int* labelCounter) {
+    for (int i = 0; i < *numLabels; ++i) {
+        if (labels[i].bgn == bgn && labels[i].end == end) 
+            return labels[i].labelID;
+    }
+
+    int newID;
+    newID = (*labelCounter)++;
+    labels[*numLabels].bgn      = bgn;
+    labels[*numLabels].end      = end;
+    labels[*numLabels].labelID  = newID;
+
+    (*numLabels)++;
+    return newID;
+}
+
+
 /*! \brief Helper function to print POP (stage1->stage2)
     \param insn Instruction to work on
 */
@@ -147,12 +165,7 @@ void disassemble(const VTAGenericInsn* insnBuffer, int numInsn, const VTAUop* uo
                 alu = (const VTAAluInsn*)&insnBuffer[i];
 
                 int currLabel;
-                currLabel = labelCounter++;
-
-                labels[numLabels].bgn       = alu->uop_bgn;
-                labels[numLabels].end       = alu->uop_end;
-                labels[numLabels].labelID   = currLabel;
-                numLabels++;
+                currLabel = findOrCreateLabel(labels, &numLabels, alu->uop_bgn, alu->uop_end, &labelCounter);
 
                 printPop(genInsn);
 
@@ -174,12 +187,7 @@ void disassemble(const VTAGenericInsn* insnBuffer, int numInsn, const VTAUop* uo
                 gemm = (const VTAGemInsn*)&insnBuffer[i];
 
                 int currLabel;
-                currLabel = labelCounter++;
-
-                labels[numLabels].bgn       = gemm->uop_bgn;
-                labels[numLabels].end       = gemm->uop_end;
-                labels[numLabels].labelID   = currLabel;
-                numLabels++;
+                currLabel = findOrCreateLabel(labels, &numLabels, gemm->uop_bgn, gemm->uop_end, &labelCounter);
 
                 printPop(genInsn);
 
