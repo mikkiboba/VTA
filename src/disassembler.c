@@ -1,15 +1,8 @@
 #include <stdio.h>
-#include <stdint.h>
 #include <stdlib.h>
 #include <vta/hw_spec.h>
 
-
-/*! \brief Temporary memory to keep track of which UOP has a label*/
-typedef struct {
-    uint32_t bgn;
-    uint32_t end;
-    int labelID;
-} UopLabelTracker;
+#include "disassmbler.h"
 
 
 int findOrCreateLabel(UopLabelTracker* labels, int* numLabels, uint32_t bgn, uint32_t end, int* labelCounter) {
@@ -29,9 +22,6 @@ int findOrCreateLabel(UopLabelTracker* labels, int* numLabels, uint32_t bgn, uin
 }
 
 
-/*! \brief Helper function to print POP (stage1->stage2)
-    \param insn Instruction to work on
-*/
 void printPop(const VTAGenericInsn* insn) {
     if (!insn->pop_prev_dep && !insn->pop_next_dep) return;
 
@@ -65,9 +55,6 @@ void printPop(const VTAGenericInsn* insn) {
 }
 
 
-/*! \brief Helper function to print PUSH (stage1->stage2)
-    \param insn Instruction to work on
-*/
 void printPush(const VTAGenericInsn* insn) {
     if (!insn->push_prev_dep && !insn->push_next_dep) return;
 
@@ -101,17 +88,18 @@ void printPush(const VTAGenericInsn* insn) {
 }
 
 
-/*! \brief Disassemble instructions to convert them in text*/
-void disassemble(const VTAGenericInsn* insnBuffer, int numInsn, const VTAUop* uopBuffer) {
+VTAErr disassemble(const VTAGenericInsn* insnBuffer, int numInsn, const VTAUop* uopBuffer) {
+
+    if (insnBuffer == NULL) return VTA_ERR_NULLPTR;
+    if (numInsn <= 0)       return VTA_ERR_INVALID_INSN_SIZE;
+
     int labelCounter;
     labelCounter = 1;
 
     UopLabelTracker* labels;
     labels = (UopLabelTracker*)malloc(numInsn * sizeof(UopLabelTracker));
-    if (!labels) {
-        fprintf(stderr, "No memory to allocate for labels.");
-        return;
-    }
+    if (!labels)
+        return VTA_ERR_NO_MEM_LABELS;
     
     int numLabels;
     numLabels = 0;
@@ -164,6 +152,11 @@ void disassemble(const VTAGenericInsn* insnBuffer, int numInsn, const VTAUop* uo
                 const VTAAluInsn* alu;
                 alu = (const VTAAluInsn*)&insnBuffer[i];
 
+                if (alu->uop_bgn > alu->uop_end || alu->uop_end > VTA_UOP_BUFF_DEPTH) {
+                    free(labels);
+                    return VTA_ERR_UOP_OOB;
+                }
+
                 int currLabel;
                 currLabel = findOrCreateLabel(labels, &numLabels, alu->uop_bgn, alu->uop_end, &labelCounter);
 
@@ -185,6 +178,11 @@ void disassemble(const VTAGenericInsn* insnBuffer, int numInsn, const VTAUop* uo
             case VTA_OPCODE_GEMM: {
                 const VTAGemInsn* gemm;
                 gemm = (const VTAGemInsn*)&insnBuffer[i];
+
+                if (gemm->uop_bgn > gemm->uop_end || gemm->uop_end > VTA_ACC_BUFF_DEPTH) {
+                    free(labels);
+                    return VTA_ERR_UOP_OOB;
+                }
 
                 int currLabel;
                 currLabel = findOrCreateLabel(labels, &numLabels, gemm->uop_bgn, gemm->uop_end, &labelCounter);
@@ -209,8 +207,8 @@ void disassemble(const VTAGenericInsn* insnBuffer, int numInsn, const VTAUop* uo
                 break;
             
             default: {
-                printf("UNK (opcode: %u)\n\n", genInsn->opcode);
-                break;
+                free(labels);
+                return VTA_ERR_INVALID_OPCODE;
             }
         }
     }
@@ -234,4 +232,6 @@ void disassemble(const VTAGenericInsn* insnBuffer, int numInsn, const VTAUop* uo
     }
 
     free(labels);
+    
+    return VTA_OK;
 }
