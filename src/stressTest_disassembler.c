@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "disassmbler.h"
+#include "assembler.h"
 
 
 static void printHeader(const char* testName) {
@@ -14,7 +15,7 @@ static void printHeader(const char* testName) {
 
 void checkStatus(VTAErr status, VTAErr expectedStatus, int* errorCount) {
     if (status == expectedStatus) {
-        if (status != VTA_OK) errorPrint(status);
+        if (status != VTA_OK) disassembler_errorPrint(status);
         printf(" PASS! Crashes avoided and correct error returned.\n\n");
     } else {
         printf(" FAIL! Expected status: [%d] but got [%d].\n\n", expectedStatus, status);

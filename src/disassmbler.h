@@ -4,20 +4,24 @@
 #include <stdint.h>
 #include <vta/hw_spec.h>
 
-
-/*! \brief STATUS codes*/
-typedef enum {
-    VTA_OK = 0,
-    VTA_ERR_NULLPTR,
-    VTA_ERR_INVALID_INSN_SIZE,
-    VTA_ERR_NO_MEM_LABELS,
-    VTA_ERR_INVALID_OPCODE,
-    VTA_ERR_UOP_OOB,
-} VTAErr;
+#include "assembler.h"
 
 
+/*! 
+* \brief Temporary memory to keep track of which UOP has a label
+*/
+typedef struct {
+    uint32_t bgn;
+    uint32_t end;
+    int labelID;
+} UopLabelTracker;
 
-static void errorPrint(VTAErr status) {
+
+/*!
+ * \brief Print a string of error based on the status code.
+ * \param status Status code (VTAErr) returned by `disassemble()`.
+*/
+static void disassembler_errorPrint(VTAErr status) {
     switch (status)
     {
     case VTA_ERR_NULLPTR:
@@ -40,16 +44,8 @@ static void errorPrint(VTAErr status) {
     }
 }
 
-
-/*! \brief Temporary memory to keep track of which UOP has a label*/
-typedef struct {
-    uint32_t bgn;
-    uint32_t end;
-    int labelID;
-} UopLabelTracker;
-
-
-/*! \brief Get the right label for the operation. If it doesn't exists, create it.
+/*! 
+    \brief Get the right label for the operation. If it doesn't exists, create it.
     \param labels Tracker of labels.
     \param numLabels Amount of existing labels.
     \param bgn Where the label begins.
