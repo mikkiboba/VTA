@@ -247,28 +247,45 @@ VTAErr assemble(
 }
 
 
-void assemble_errorPrint(VTAErr status, int line_number) {
+/*!
+ * \brief Print on stderr the error string for assembler errors.
+ *
+ * The error is based on the status passed as parameter.
+ * 
+ * \param status VTAErr code.
+ * \param lineNum line number of the input string in which the error happened.
+*/
+void assemble_errorPrint(VTAErr status, int lineNum) {
     if (status == VTA_OK) return;
     
-    fprintf(stderr, "[ASM_ERR] Linea %d: ", line_number > 0 ? line_number : 0);
+    fprintf(stderr, "[ASM_ERR] Row %d: ", lineNum > 0 ? lineNum : 0);
     switch (status) {
         case VTA_ERR_NULLPTR:
-            fprintf(stderr, "Fornito un puntatore NULL ai buffer.\n"); break;
+            fprintf(stderr, "NULL pointer to the buffer.\n"); 
+            break;
         case VTA_ERR_INVALID_INSN_SIZE:
-            fprintf(stderr, "Dimensione massima dei buffer non valida (<= 0).\n"); break;
+            fprintf(stderr, "Buffer size not valid (<= 0).\n"); 
+            break;
         case VTA_ERR_INSN_BUFFER_FULL:
-            fprintf(stderr, "Buffer Istruzioni pieno. Raggiunto il limite massimo.\n"); break;
+            fprintf(stderr, "The instruction buffer is full.\n"); 
+            break;
         case VTA_ERR_UOP_BUFFER_FULL:
-            fprintf(stderr, "Buffer UOP pieno. Raggiunto il limite massimo.\n"); break;
+            fprintf(stderr, "The UOP buffer is full.\n"); 
+            break;
         case VTA_ERR_SYNTAX:
-            fprintf(stderr, "Errore di sintassi. Token imprevisto o formato non valido.\n"); break;
+            fprintf(stderr, "Syntax error. Unexpected token or invalid format.\n"); 
+            break;
         case VTA_ERR_UNKNOWN_MNEMONIC:
-            fprintf(stderr, "Istruzione o registro non riconosciuto.\n"); break;
+            fprintf(stderr, "Unknown instruction or register.\n"); 
+            break;
         case VTA_ERR_LABEL_NOT_FOUND:
-            fprintf(stderr, "Riferimento a un'etichetta (label) non trovata.\n"); break;
+            fprintf(stderr, "Label reference not found.\n"); 
+            break;
         case VTA_ERR_OUT_OF_RANGE:
-            fprintf(stderr, "Valore numerico fuori dal range consentito.\n"); break;
+            fprintf(stderr, "Numeric value outside of range.\n"); 
+            break;
         default:
-            fprintf(stderr, "Errore sconosciuto (Codice: %d).\n", status); break;
+            fprintf(stderr, "Unknown error to VTAErr (Code: %d).\n", status); 
+            break;
     }
 }
