@@ -6,9 +6,16 @@
 #include "assembler.h"
 
 /*!
- * \brief Text of size 63 + 1 ('\n')
+ * \brief Max size for a token:
+ *
+ * \note 63 + 1 ('\\n')
 */
 #define TEXT_SIZE 64
+
+/*!
+ * \brief Max dimension for label table
+*/
+#define MAX_LABELS 128
 
 
 /*!
@@ -101,9 +108,200 @@ typedef struct {
 
 
 /*!
+ * \brief Single label in the Label Table (LT).
+ *
+ * Store information on a single label to insert in the LT, such as its name, 
+ * the micro-operation's index, and the line number on the input.
+*/
+typedef struct {
+    char name[TEXT_SIZE];
+    uint32_t uopIdx;
+    int lineNum;
+} VTALabel;
+
+
+/*!
+ * \brief Label table (LT).
+ *
+ * Store information on every label found in the input text. See struct `VTALabel`.
+*/
+typedef struct {
+    VTALabel labels[MAX_LABELS];
+    int count;
+} VTALT;
+
+
+/*!
+ * \brief Initialize the label table (LT).
+ *
+ * Set table count to zero.
+ * 
+ * \param table Table to use.
+*/
+static void LT_init(VTALT* table) {
+    table->count = 0;
+}
+
+/*!
+ * \brief Add a new label to the label table (LT).
+ * 
+ * \param table     Label table.
+ * \param name      Name of the label.
+ * \param uopIdx    Index of the micro-instruction.
+ * \param lineNum   Line number in the input file.
+ * 
+ * \return Status of type (VTAErr).
+*/
+static VTAErr LT_add(VTALT* table, const char* name, uint32_t uopIdx, int lineNum) {
+    // * check for duplicates
+    for (int i = 0; i < table->count; i++) {
+        if (strcmp(table->labels[i].name, name) == 0)
+            return VTA_ERR_SYNTAX;
+    }
+
+    if (table->count >= MAX_LABELS) 
+        return VTA_ERR_NO_MEM_LABELS;
+
+    strncpy(table->labels[table->count].name, name, TEXT_SIZE-1);
+    table->labels[table->count].name[TEXT_SIZE-1]   = '\0';
+    table->labels[table->count].uopIdx              = uopIdx;
+    table->labels[table->count].lineNum             = lineNum;
+
+    table->count++;
+
+    return VTA_OK;
+}
+
+
+/*!
+ * Find a label in the label table (LT).
+ * 
+ * \param table Label table.
+ * \param name Name of the label to find
+ * 
+ * \return UOP index if found (>= 0); -1 otherwise.
+*/
+static int LT_find(const VTALT* table, const char* name) {
+    for (int i = 0; i < table->count; i++) {
+        if (strcmp(table->labels[i].name, name) == 0)
+            return (int)table->labels[i].uopIdx;
+    }
+
+    return -1;
+}
+
+
+/*!
+ * \brief Get the next token without moving the cursor.
+ *
+ * \param ctx Parser context with cursor.
+*/
+static VTAToken peekNextToken(const VTAParserContext* ctx) {
+    VTAParserContext tempCtx = *ctx;
+    return getNextToken(&tempCtx);
+}
+
+
+static VTAErr makeLT(
+    const char* asmCode,
+    VTALT* table,
+    int maxInsn,
+    int maxUop,
+    int* estimatedInsn,
+    int* estimatedUop,
+    int* errLine
+) {
+    VTAParserContext ctx;
+    ctx.cursor  = asmCode;
+    ctx.lineNum = 1;
+
+    LT_init(&table);
+
+    uint32_t currentUopIdx;
+    currentUopIdx = 0;
+
+    int IC;
+    IC = 0;
+
+    while (1) {
+        VTAToken token;
+        token = getNextToken(&ctx);
+
+        if (token.type == TOKEN_EOF)
+            break;
+        
+        if (token.type == TOKEN_ERROR) {
+            *errLine = ctx.lineNum;
+            return VTA_ERR_SYNTAX;
+        }
+
+        if (token.type == TOKEN_IDENTIFIER) {
+            VTAToken nextToken;
+            nextToken = peekNextToken(&ctx);
+
+            if (nextToken.type == TOKEN_PUNCTUATION && strcmp(nextToken.text, ":") == 0) {
+                getNextToken(&ctx); // consumes ":"
+
+                VTAErr error;
+                error = LT_add(table, token.text, currentUopIdx, ctx.lineNum);
+
+                if (error != VTA_OK) {
+                    *errLine = ctx.lineNum;
+                    return error;
+                }
+
+                continue;
+            }
+
+            if (
+                strcmp(token.text, "LOAD") == 0     || strcmp(token.text, "STORE") == 0     ||
+                strcmp(token.text, "STOR") == 0     || strcmp(token.text, "GEMM") == 0      ||
+                strcmp(token.text, "ALU") == 0      || strncmp(token.text, "ALU.", 4) == 0  ||
+                strcmp(token.text, "FINISH") == 0   || strcmp(token.text, "NOOP") == 0      ||
+                strcmp(token.text, "PUSH") == 0     || strcmp(token.text, "POP") == 0       
+            ) {
+                IC++;
+                if (IC > maxInsn) {
+                    *errLine = ctx.lineNum;
+                    return VTA_ERR_INSN_BUFFER_FULL;
+                }
+            }
+        }
+        else if (token.type == TOKEN_INT) {
+            // * a sequence like "0, 0, 0" represents an uop
+            currentUopIdx++;
+
+            if ((int)currentUopIdx > maxUop) {
+                *errLine = ctx.lineNum;
+                return VTA_ERR_UOP_BUFFER_FULL;
+            }
+
+            // * consume all other nums and ','
+            while (1) {
+                VTAToken nextToken;
+                nextToken = peekNextToken(&ctx);
+
+                if (nextToken.type == TOKEN_INT ||
+                    (nextToken.type == TOKEN_PUNCTUATION && strcmp(nextToken.text, ",") == 0)) 
+                    getNextToken(&ctx);
+                else
+                    break;
+            }
+        }
+    }
+
+    *estimatedInsn  = IC;
+    *estimatedUop   = (int)currentUopIdx;
+
+    return VTA_OK;
+}
+
+
+/*!
  * \brief Go on with the text, skipping white spaces and comments.
  * 
  * Count line when encountering `\n` and move the cursor when encountering white spaces and comments.
+ * 
  * \note
  * - Current supported comment formats: `#` (python-like), `//` (C-like).
  * 
@@ -143,6 +341,8 @@ static void skipWhiteSpaceAndComments(VTAParserContext* ctx) {
  * and produce an output `VTAToken`.
  * 
  * \param ctx Context parser from the input.
+ * 
+ * \return Next token.
 */
 static VTAToken getNextToken(VTAParserContext* ctx) {
     VTAToken token;
@@ -194,7 +394,7 @@ static VTAToken getNextToken(VTAParserContext* ctx) {
     if (*ctx->cursor == '-' && *(ctx->cursor + 1) == '>') {
         token.type = TOKEN_PUNCTUATION;
 
-        strcpy(token.text, '>');
+        strcpy(token.text, "->");
         ctx->cursor += 2;
 
         return token;
@@ -227,7 +427,13 @@ VTAErr assemble(
     int maxUop,
     int* numUop
 ) {
-    if (asmCode == NULL || insnBuffer == NULL || numInsn == NULL || uopBuffer == NULL || numUop == NULL)
+    if (
+        asmCode == NULL     || 
+        insnBuffer == NULL  || 
+        numInsn == NULL     || 
+        uopBuffer == NULL   ||
+        numUop == NULL
+    )
         return VTA_ERR_NULLPTR;
     if (maxInsn <= 0 || maxUop <= 0)
         return VTA_ERR_INVALID_INSN_SIZE;
@@ -235,13 +441,23 @@ VTAErr assemble(
     *numInsn = 0;
     *numUop  = 0;
 
-    VTAParserContext ctx;
-    ctx.cursor  = asmCode;
-    ctx.lineNum = 1;
+    VTALT labelTable;
+    int estimatedInsn, estimatedUop, errLine;
+    estimatedInsn   = 0;
+    estimatedUop    = 0;
+    errLine         = 1;
 
-    // TODO: Step 1: scan to make label table
+    // *: Step 1: scan to make label table
+    VTAErr status;
+    status = makeLT(asmCode, &labelTable, maxInsn, maxUop, &estimatedInsn, &estimatedUop, &errLine);
+    if (status != VTA_OK) 
+        return status;
     
     // TODO: Step 2: binary stuff
+
+
+    *numInsn = estimatedInsn;
+    *numUop  = estimatedUop;
 
     return VTA_OK;
 }
@@ -252,8 +468,8 @@ VTAErr assemble(
  *
  * The error is based on the status passed as parameter.
  * 
- * \param status VTAErr code.
- * \param lineNum line number of the input string in which the error happened.
+ * \param status    VTAErr code.
+ * \param lineNum   Line number of the input string in which the error happened.
 */
 void assemble_errorPrint(VTAErr status, int lineNum) {
     if (status == VTA_OK) return;

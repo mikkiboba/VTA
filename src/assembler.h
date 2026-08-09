@@ -33,13 +33,15 @@ typedef enum {
 /*!
  * \brief Assemble the VTA source code in binary instructions VTA and UOP.
  *
- * \param asmCode Null-terminated string with source Assembly VTA code.
- * \param insnBuffer Pre-allocated buffer that will contain the binary VTAGenericInsn instructions.
- * \param maxInsn Maximum capacity (#elements) for insnBuffer.
- * \param numInsn Pointer that will contain the total number of binary instructions generated.
- * \param uopBuffer Pre-allocated buffer that will contain the VTAUop UOPs.
- * \param maxUop Maximum capacity (#elements) for uopBuffer.
- * \param numUop Pointer that will contain the total number of UOPs generated.  
+ * \param asmCode       Null-terminated string with source Assembly VTA code.
+ * \param insnBuffer    Pre-allocated buffer that will contain the binary VTAGenericInsn instructions.
+ * \param maxInsn       Maximum capacity (#elements) for insnBuffer.
+ * \param numInsn       Pointer that will contain the total number of binary instructions generated.
+ * \param uopBuffer     Pre-allocated buffer that will contain the VTAUop UOPs.
+ * \param maxUop        Maximum capacity (#elements) for uopBuffer.
+ * \param numUop        Pointer that will contain the total number of UOPs generated.  
+ * 
+ * \return Status 
 */
 VTAErr assemble(
     const char* asmCode,
@@ -54,8 +56,8 @@ VTAErr assemble(
 
 /*!
  * \brief Helper function to print assembler's errors on stderr.
- * \param status Status code (VTAErr) returned from VTA_assemble().
- * \param lineNumber Line count of the source where the error happened (-1 if not applicable).
+ * \param status        Status code (VTAErr) returned from VTA_assemble().
+ * \param lineNumber    Line count of the source where the error happened (-1 if not applicable).
 */
 void assemble_errorPrint(VTAErr status, int lineNumber);
 
