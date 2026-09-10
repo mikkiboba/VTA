@@ -65,6 +65,9 @@ VTAErr vtaAssemble(
  * \param outBufferSize Size of the output buffer.
  * 
  * \return Status code.
+ * 
+ * \note `numUop` is for limit checking.
+ * \note `outBuffer` is for the print.
 */
 VTAErr vtaDisassemble(
     const VTAGenericInsn    *insnBuffer,
@@ -80,7 +83,9 @@ VTAErr vtaDisassemble(
  * \brief Print a string of error based on the status code.
  *
  * \param status    Status code (VTAErr).
- * \param lineNum   Number of line in the code.
+ * \param lineNum   Number of line in the code related to the error.
+ * 
+ * \note `lineNum` uses -1 or 0 if it's not applicable.
 */
 void vtaErrorPrint(VTAErr status, int lineNum);
 
