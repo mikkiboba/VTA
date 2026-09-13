@@ -14,18 +14,18 @@ static void printHeader(const char *testName) {
 }
 
 
-void checkStatus(VTAErr status, VTAErr expectedStatus, int *errorCount) {
+static void checkStatus(VTAErr status, VTAErr expectedStatus, int *errorCount) {
     if (status == expectedStatus) {
         if (status != VTA_OK) vtaErrorPrint(status, -1);
         printf(" PASS! Crashes avoided and correct error returned.\n\n");
     } else {
         printf(" FAIL! Expected status: [%d] but got [%d].\n\n", expectedStatus, status);
-        *errorCount += 1;
+        (*errorCount)++;
     }
 }
 
 
-int test_nullPointers(void) {
+static int test_nullPointers(void) {
     printHeader("1. Check on NULL pointers and numInsn <= 0.");
 
     int error;
@@ -48,10 +48,12 @@ int test_nullPointers(void) {
     printf(" 1.3 - Passing numInsn = -5\n");
     status = vtaDisassemble(&testInsn, -5, NULL, 0, outBuffer, sizeof(outBuffer));
     checkStatus(status, VTA_ERR_INVALID_INSN_SIZE, &error);
+
+    return error;
 }
 
 
-int test_invalidOPCode(void) {
+static int test_invalidOPCode(void) {
     printHeader("2. Check on invalid/unknown OPCodes.");
 
     int error;
@@ -73,7 +75,7 @@ int test_invalidOPCode(void) {
 }
 
 
-int test_uopOutOfBounds(void) {
+static int test_uopOutOfBounds(void) {
     printHeader("3. Check on if UOP indices are out of bounds.");
 
     int error;
@@ -91,30 +93,24 @@ int test_uopOutOfBounds(void) {
 
     insn->opcode = VTA_OPCODE_GEMM;
     testGemmInsn.uop_bgn = 0;
-    testGemmInsn.uop_end = VTA_ACC_BUFF_DEPTH + 1;
+    testGemmInsn.uop_end = VTA_UOP_BUFF_DEPTH + 1;
 
-    printf(" 3.1 - Passing GEMM instruction with uop_end (%d) > VTA_UOP_BUFF_DEPTH (%d)\n", testGemmInsn.uop_end, VTA_INP_BUFF_DEPTH);
-    
-    printf("DEBUG: gemm.uop_bgn = %u\n", gemm.uop_bgn);
-    printf("DEBUG: gemm.uop_end = %u\n", gemm.uop_end);
-    printf("DEBUG: VTA_UOP_BUFF_DEPTH = %u\n", VTA_UOP_BUFF_DEPTH);
-    printf("DEBUG: numUop = %d\n", numUop);
-    
-    status = vtaDisassemble(insn, 1, NULL, 5000, outBuffer, sizeof(outBuffer));
+    printf(" 3.1 - Passing GEMM instruction with uop_end (%u) > VTA_UOP_BUFF_DEPTH (%u)\n", (unsigned)testGemmInsn.uop_end, (unsigned)VTA_UOP_BUFF_DEPTH);
+    status = vtaDisassemble(insn, 1, NULL, VTA_UOP_BUFF_DEPTH, outBuffer, sizeof(outBuffer));
     checkStatus(status, VTA_ERR_UOP_OUT_OF_BOUNDS, &error);
 
     testGemmInsn.uop_bgn = 10;
     testGemmInsn.uop_end = 9;
 
-    printf(" 3.2 - Passing GEMM instruction with uop_bgn (%d) > uop_end (%d)\n", testGemmInsn.uop_bgn, testGemmInsn.uop_end);
-    status = vtaDisassemble(insn, 1, NULL, 5000, outBuffer, sizeof(outBuffer));
+    printf(" 3.2 - Passing GEMM instruction with uop_bgn (%u) > uop_end (%u)\n", (unsigned)testGemmInsn.uop_bgn, (unsigned)testGemmInsn.uop_end);
+    status = vtaDisassemble(insn, 1, NULL, VTA_UOP_BUFF_DEPTH, outBuffer, sizeof(outBuffer));
     checkStatus(status, VTA_ERR_UOP_OUT_OF_BOUNDS, &error);
 
     return error;
 }
 
 
-int test_nullUopBuffer(void) {
+static int test_nullUopBuffer(void) {
     printHeader("4. Check on GEMM/ALU instructions with uopBuffer = NULL.");
 
     int error;
@@ -242,6 +238,7 @@ int main(void) {
     error += test_invalidOPCode();
     error += test_uopOutOfBounds();
     error += test_nullUopBuffer();
+    error += test_labelReuse();
 
     if (error > 0)
         printf("X - NOT ALL TESTS HAVE PASSED (%d failures).\n", error);
