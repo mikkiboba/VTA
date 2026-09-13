@@ -173,10 +173,12 @@ VTAErr vtaDisassemble(
 ) {
     if (insnBuffer == NULL || outBuffer == NULL)
         return VTA_ERR_NULLPTR;
-    if (numUop > 0 && uopBuffer == NULL)
-        return VTA_ERR_NULLPTR;
-    if (outBufferSize == 0)
+    if (numInsn <= 0) 
         return VTA_ERR_INVALID_INSN_SIZE;
+    if (numUop < 0)
+        return VTA_ERR_INVALID_INSN_SIZE; // * placeholder
+    if (outBufferSize == 0)
+        return VTA_ERR_INVALID_INSN_SIZE; // * placeholder
 
     outBuffer[0] = '\0';
     size_t offset;
@@ -292,7 +294,7 @@ VTAErr vtaDisassemble(
                 if (
                     gemm->uop_bgn > gemm->uop_end       ||
                     gemm->uop_end > (uint32_t)numUop    ||
-                    gemm->uop_end > VTA_ACC_BUFF_DEPTH
+                    gemm->uop_end > VTA_UOP_BUFF_DEPTH
                 ) {
                     free(labels);
                     return VTA_ERR_UOP_OUT_OF_BOUNDS;
