@@ -37,7 +37,7 @@ gcc \
     "$SCRIPT_DIR/src/vtaError.c" \
     "$SCRIPT_DIR/src/assembler.c" \
     "$SCRIPT_DIR/src/disassembler.c" \
-    "$SCRIPT_DIR/src/test_runner.c" \
+    "$SCRIPT_DIR/tests/test_runner.c" \
     -L"$TVM_BUILD_DIR" -lvta_fsim -ltvm \
     -o "$SCRIPT_DIR/build/vtaBuild"
 

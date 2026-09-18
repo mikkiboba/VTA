@@ -49,6 +49,10 @@ static int test_nullPointers(void) {
     status = vtaDisassemble(&testInsn, -5, NULL, 0, outBuffer, sizeof(outBuffer));
     checkStatus(status, VTA_ERR_INVALID_INSN_SIZE, &error);
 
+    printf(" 1.4 - Passing numUop = -1\n");
+    status = vtaDisassemble(&testInsn, 1, NULL, -1, outBuffer, sizeof(outBuffer));
+    checkStatus(status, VTA_ERR_INVALID_INSN_SIZE, &error);
+
     return error;
 }
 
@@ -216,13 +220,82 @@ static int test_labelReuse(void) {
     memInsn(insn_stream, 4, VTA_OPCODE_LOAD, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
 
     VTAErr status;
-    status = vtaDisassemble(insn_stream, 5, uop_stream, 5, out_buf, sizeof(out_buf));    
-    if (status != VTA_OK) {
+    status = vtaDisassemble(insn_stream, 5, uop_stream, 5, out_buf, sizeof(out_buf));   
+    
+    if (
+        strstr(out_buf, "lbl1_bgn") == NULL ||
+        strstr(out_buf, "lbl1_end") == NULL ||
+        strstr(out_buf, "lbl2_bgn") == NULL ||
+        strstr(out_buf, "lbl2_end") == NULL 
+    ) {
         printf(" FAIL! Disassembler returned error %d\n", status);
         error++;
     } else {
         printf(" PASS! Disassembly successful. Output:\n\n%s\n", out_buf);
     }
+
+    return error;
+}
+
+
+static int test_outputBuffer(void) {
+    printHeader("6. Check on output buffer parameters.");
+
+    int error;
+    error = 0;
+
+    VTAErr status;
+
+    VTAGenericInsn testInsn;
+
+    char outBuffer[OUT_BUF_SIZE];
+    memset(&testInsn, 0, sizeof(testInsn));
+
+    printf(" 6.1 - Passing outBuffer = NULL\n");
+    status = vtaDisassemble(&testInsn, 1, NULL, 0, NULL, sizeof(outBuffer));
+    checkStatus(status, VTA_ERR_NULLPTR, &error);
+
+    printf(" 6.2 - Passing outBufferSize = 0\n");
+    status = vtaDisassemble(&testInsn, 1, NULL, 0, outBuffer, 0);
+    checkStatus(status, VTA_ERR_INVALID_INSN_SIZE, &error);
+
+    return error;
+}
+
+
+static int test_uopBufferSize(void) {
+    printHeader("7. Check UOP indices against numUop.");
+
+    int error;
+    error = 0;
+
+    VTAErr status;
+    char outBuffer[OUT_BUF_SIZE];
+
+    VTAGemInsn testGemmInsn;
+    memset(&testGemmInsn, 0, sizeof(testGemmInsn));
+    VTAGenericInsn *insn;
+    insn = (VTAGenericInsn *)&testGemmInsn;
+    insn->opcode = VTA_OPCODE_GEMM;
+
+    testGemmInsn.uop_bgn = 0;
+    testGemmInsn.uop_end = 5;
+
+    int numUop;
+    numUop = 4;
+
+    printf(" 7.1 - Passing uop_end (%u) > numUop (%u)", (unsigned)testGemmInsn.uop_end, (unsigned)numUop);
+
+    status = vtaDisassemble(insn, 1, NULL, numUop, outBuffer, sizeof(outBuffer));
+    checkStatus(status, VTA_ERR_UOP_OUT_OF_BOUNDS, &error);
+
+    testGemmInsn.uop_bgn = 0;
+    testGemmInsn.uop_end = 4;
+
+    printf(" 7.2 - Passing valid range [%u, %u) with numUop = %u\n", (unsigned)testGemmInsn.uop_bgn, (unsigned)testGemmInsn.uop_end, (unsigned)numUop);
+
+    status = vtaDisassemble(insn, 1, NULL, numUop, outBuffer, sizeof(outBuffer));
+    checkStatus(status, VTA_OK, &error);
 
     return error;
 }
@@ -239,6 +312,8 @@ int main(void) {
     error += test_uopOutOfBounds();
     error += test_nullUopBuffer();
     error += test_labelReuse();
+    error += test_outputBuffer();
+    error += test_uopBufferSize();
 
     if (error > 0)
         printf("X - NOT ALL TESTS HAVE PASSED (%d failures).\n", error);

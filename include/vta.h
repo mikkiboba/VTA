@@ -2,7 +2,6 @@
 #define VTA_H
 
 
-#include <stdio.h>
 #include <stdint.h>
 #include <stddef.h>
 #include <vta/hw_spec.h>
@@ -60,14 +59,11 @@ VTAErr vtaAssemble(
  * \param insnBuffer    Buffer of instructions.
  * \param numInsn       How many instructions.
  * \param uopBuffer     Buffer of micro operations.
- * \param numUop        How many micro instructions.
- * \param outBuffer     Output buffer.
+ * \param numUop        Number of valid uops available in uopBuffer.
+ * \param outBuffer     Output buffer containing the generated assembly text.
  * \param outBufferSize Size of the output buffer.
  * 
  * \return Status code.
- * 
- * \note `numUop` is for limit checking.
- * \note `outBuffer` is for the print.
 */
 VTAErr vtaDisassemble(
     const VTAGenericInsn    *insnBuffer,
