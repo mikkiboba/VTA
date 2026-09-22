@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include <vta/hw_spec.h>
 
 #include "vta.h"
@@ -15,26 +16,67 @@ typedef struct {
 } UopLabelTracker;
 
 
+#define APPEND(outBuffer, outBufferSize, offsetPtr, ...)    \
+    do {                                                    \
+        status = appendArgument(                              \
+            (outBuffer),                                    \
+            (outBufferSize),                                \
+            (offsetPtr),                                    \
+            __VA_ARGS__                                     \
+        );                                                  \
+        if (status != VTA_OK)                               \
+            goto output_full;                               \
+    } while (0)                                             \
+
+
 /*!
- * \brief Utility macro to append text in the buffer safely. 
- * Automatically compute the remaining space and update the offset.
- */
-#define APPEND(outBuffer, outBufferSize, offsetPtr, ...) do {       \
-    if (*(offsetPtr) < outBufferSize) {                             \
-        int written;                                                \
-        written = snprintf(outBuffer + *(offsetPtr),                \
-                           outBufferSize - *(offsetPtr),            \
-                           __VA_ARGS__);                            \
-        if (written > 0) {                                          \
-            size_t remaining;                                       \
-            remaining = outBufferSize - *(offsetPtr);               \
-            if ((size_t)written < remaining)                        \
-                *(offsetPtr) += (size_t)written;                    \
-            else                                                    \
-                *(offsetPtr) = remaining - 1;                       \
-        }                                                           \
-    }                                                               \
-} while (0)
+ * \brief Append formatted text to the output buffer.
+ *
+ * \param outBuffer     Buffer for the text output.
+ * \param outBufferSize Size related to outBuffer.
+ * \param offset 
+ * \param format        Text to append
+*/
+static VTAErr appendArgument(
+    char        *outBuffer,
+    size_t      outBufferSize,
+    size_t      *offset,
+    const char  *format,
+    ...
+) {
+    if (outBuffer == NULL || offset == NULL || format == NULL) 
+        return VTA_ERR_NULLPTR;
+
+    if (outBufferSize == 0 || *offset >= outBufferSize)
+        return VTA_ERR_OUTPUT_BUFFER_FULL;
+
+    size_t remaining;
+    remaining = outBufferSize - *offset;
+
+    va_list args;
+    va_start(args, format);
+
+    int written;
+    // * vsnprintf returns the number of characters that would have been written (w/o "\0")
+    // * if written >= remaining => the output has been truncated
+    written = vsnprintf(outBuffer + *offset, remaining, format, args);
+
+    va_end(args);
+
+    if (written < 0)
+        return VTA_ERR_OUTPUT_BUFFER_FULL;
+
+    if ((size_t)written >= remaining) {
+        *offset = outBufferSize - 1;
+        outBuffer[*offset] = '\0';
+        
+        return VTA_ERR_OUTPUT_BUFFER_FULL;
+    }
+
+    *offset += (size_t)written;
+
+    return VTA_OK;
+}
 
 
 /*!
@@ -78,14 +120,17 @@ static int findOrCreateLabel(
  * \param outBufferSize Size of the output buffer.
  * \param offset        Offset for the text.
 */
-static void printPop(
+static VTAErr printPop(
     const VTAGenericInsn    *insn,
     char                    *outBuffer,
     size_t                  outBufferSize,
     size_t                  *offset
 ) {
+    VTAErr status; 
+    status = VTA_OK;
+
     if (!insn->pop_prev_dep && !insn->pop_next_dep)
-        return;
+        return VTA_OK;
 
     APPEND(outBuffer, outBufferSize, offset, "POP (");
 
@@ -114,6 +159,11 @@ static void printPop(
             break;
     }
     APPEND(outBuffer, outBufferSize, offset, ")\n");
+
+    return VTA_OK;
+
+output_full:
+    return status;
 }
 
 
@@ -125,13 +175,18 @@ static void printPop(
  * \param outBufferSize Size of the output buffer.
  * \param offset        Offset for the text.
 */
-static void printPush(
+static VTAErr printPush(
     const VTAGenericInsn    *insn, 
     char                    *outBuffer, 
     size_t                  outBufferSize,
     size_t                  *offset 
 ) {
-    if (!insn->push_prev_dep && !insn->push_next_dep) return;
+    VTAErr status;
+    status = VTA_OK;
+
+
+    if (!insn->push_prev_dep && !insn->push_next_dep) 
+        return VTA_OK;
 
     APPEND(outBuffer, outBufferSize, offset, "PUSH (");
 
@@ -160,6 +215,11 @@ static void printPush(
             break;
     }
     APPEND(outBuffer, outBufferSize, offset, ")\n");
+
+    return VTA_OK;
+
+output_full:
+    return status;
 }
 
 
@@ -184,16 +244,21 @@ VTAErr vtaDisassemble(
     size_t offset;
     offset = 0;
 
+    VTAErr status;
+    status = VTA_OK;
+
     int labelCounter;
     labelCounter = 1;
 
-    UopLabelTracker *labels = (UopLabelTracker *)malloc(numInsn * sizeof(UopLabelTracker));
-    if (!labels) 
-        return VTA_ERR_NO_MEM_LABELS;
-    
     int numLabels;
     numLabels = 0;
 
+    UopLabelTracker *labels;
+    labels = (UopLabelTracker *)malloc(numInsn * sizeof(UopLabelTracker));
+    if (labels == NULL) 
+        return VTA_ERR_NO_MEM_LABELS;
+
+    // * first step: disassemble each insn and build the table
     for (int i = 0; i < numInsn; i++) {
         const VTAGenericInsn *genericInsn;
         genericInsn = &insnBuffer[i];
@@ -210,7 +275,9 @@ VTAErr vtaDisassemble(
                     break;
                 }
 
-                printPop(genericInsn, outBuffer, outBufferSize, &offset);
+                status = printPop(genericInsn, outBuffer, outBufferSize, &offset);
+                if (status != VTA_OK)
+                    goto output_full;
 
                 if (mem->memory_type == VTA_MEM_ID_UOP) 
                     APPEND(
@@ -225,7 +292,10 @@ VTAErr vtaDisassemble(
                         mem->sram_base, mem->dram_base, mem->y_size, mem->x_size, mem->x_stride
                     );
                 
-                printPush(genericInsn, outBuffer, outBufferSize, &offset);
+                status = printPush(genericInsn, outBuffer, outBufferSize, &offset);
+                if (status != VTA_OK)
+                    goto output_full;
+
                 APPEND(outBuffer, outBufferSize, &offset, "\n");
                 break;
             }
@@ -233,7 +303,9 @@ VTAErr vtaDisassemble(
                 const VTAMemInsn *mem;
                 mem = (const VTAMemInsn *)&insnBuffer[i];
                 
-                printPop(genericInsn, outBuffer, outBufferSize, &offset);
+                status = printPop(genericInsn, outBuffer, outBufferSize, &offset);
+                if (status != VTA_OK)
+                    goto output_full;
 
                 APPEND(
                     outBuffer, outBufferSize, &offset,
@@ -241,7 +313,9 @@ VTAErr vtaDisassemble(
                     mem->dram_base, mem->y_size, mem->x_size, mem->x_stride, mem->sram_base
                 );
 
-                printPush(genericInsn, outBuffer, outBufferSize, &offset);
+                status = printPush(genericInsn, outBuffer, outBufferSize, &offset);
+                if (status != VTA_OK)
+                    goto output_full;
 
                 APPEND(outBuffer, outBufferSize, &offset, "\n");
                 break;
@@ -262,7 +336,9 @@ VTAErr vtaDisassemble(
                 int currentLabel;
                 currentLabel = findOrCreateLabel(labels, &numLabels, alu->uop_bgn, alu->uop_end, &labelCounter);
 
-                printPop(genericInsn, outBuffer, outBufferSize, &offset);
+                status = printPop(genericInsn, outBuffer, outBufferSize, &offset);
+                if (status != VTA_OK)
+                    goto output_full;
                 
                 APPEND(
                     outBuffer, outBufferSize, &offset,
@@ -283,7 +359,10 @@ VTAErr vtaDisassemble(
                         alu->uop_bgn, alu->uop_end, alu->uop_bgn, alu->uop_end
                     );
 
-                printPush(genericInsn, outBuffer, outBufferSize, &offset);
+                status = printPush(genericInsn, outBuffer, outBufferSize, &offset);
+                if (status != VTA_OK)
+                    goto output_full;
+
                 APPEND(outBuffer, outBufferSize, &offset, "\n");
                 break;
             }
@@ -303,7 +382,9 @@ VTAErr vtaDisassemble(
                 int currentLabel;
                 currentLabel = findOrCreateLabel(labels, &numLabels, gemm->uop_bgn, gemm->uop_end, &labelCounter);
 
-                printPop(genericInsn, outBuffer, outBufferSize, &offset);
+                status = printPop(genericInsn, outBuffer, outBufferSize, &offset);
+                if (status != VTA_OK) 
+                    goto output_full;
 
                 APPEND(
                     outBuffer, outBufferSize, &offset,
@@ -324,7 +405,9 @@ VTAErr vtaDisassemble(
                         gemm->uop_bgn, gemm->uop_end, gemm->uop_bgn, gemm->uop_end, gemm->uop_bgn, gemm->uop_end
                     );
 
-                printPush(genericInsn, outBuffer, outBufferSize, &offset);
+                status = printPush(genericInsn, outBuffer, outBufferSize, &offset);
+                if (status != VTA_OK)
+                    goto output_full;
 
                 APPEND(outBuffer, outBufferSize, &offset, "\n");
                 break;
@@ -366,4 +449,8 @@ VTAErr vtaDisassemble(
 
     free(labels);
     return VTA_OK;
+
+output_full:
+    free(labels);
+    return status;
 }

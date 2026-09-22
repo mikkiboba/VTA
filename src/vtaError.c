@@ -28,6 +28,9 @@ void vtaErrorPrint(VTAErr status, int lineNum) {
         case VTA_ERR_UOP_OUT_OF_BOUNDS:
             fprintf(stderr, "Micro operation index out of bounds.\n");
             break;
+        case VTA_ERR_OUTPUT_BUFFER_FULL:
+            fprintf(stderr, "The output buffer is full.\n");
+            break;
         case VTA_ERR_INSN_BUFFER_FULL:
             fprintf(stderr, "The instruction buffer is full.\n");
             break;
