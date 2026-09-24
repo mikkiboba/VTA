@@ -43,6 +43,11 @@ typedef enum {
     TOKEN_PUNCTUATION,
 
     /*!
+     * \brief End of line for uops.
+    */
+    TOKEN_EOL,
+
+    /*!
      * \brief End of file/string.
     */
     TOKEN_EOF,
@@ -52,6 +57,37 @@ typedef enum {
     */
     TOKEN_ERROR,
 } VTATokenType;
+
+
+typedef enum {
+    ASM_LOAD,
+    ASM_STORE,
+    ASM_GEMM,
+    ASM_GEMM_RST,
+    ASM_ALU,
+    ASM_FINISH,
+    ASM_NOOP
+} VTAAsm;
+
+
+typedef struct {
+    int pop_prev;
+    int pop_next;
+    int push_prev;
+    int push_next;
+} VTADependencies;
+
+
+typedef struct {
+    VTAAsm kind;
+    VTADependencies deps;
+
+    union {
+        VTAMemInsn mem;
+        VTAGemInsn gemm;
+        VTAAluInsn alu;
+    } data;
+} VTAParsedInsn;
 
 
 /*!
@@ -223,23 +259,18 @@ static VTAToken peekNextToken(const VTAParserContext *ctx) {
 */
 static void skipWhiteSpaceAndComments(VTAParserContext *ctx) {
     while (*ctx->cursor != '\0') {
-        if (*ctx->cursor == '\n') {
-            ctx->lineNum++;
-            ctx->cursor++;
-            continue;
-        }
-
+        if (*ctx->cursor == '\n')
+            break;
+        
         if (isspace((unsigned char)*ctx->cursor)) {
             ctx->cursor++;
             continue;
         }
 
-        if (
-            *ctx->cursor == '#' || 
-            (*ctx->cursor == '/' && *(ctx->cursor + 1) == '/')
-        ) {
+        if (*ctx->cursor == '#' || (*ctx->cursor == '/' && *(ctx->cursor + 1) == '/')) {
             while (*ctx->cursor != '\0' && *ctx->cursor != '\n')
                 ctx->cursor++;
+            
             continue;
         }
 
@@ -264,22 +295,38 @@ static VTAToken getNextToken(VTAParserContext *ctx) {
 
     skipWhiteSpaceAndComments(ctx);
 
+    if (*ctx->cursor == '\n') {
+        token.type = TOKEN_EOL;
+        strcpy(token.text, "\\n");
+
+        ctx->cursor++;
+        ctx->lineNum++;
+
+        return token;
+    }
+
     if (*ctx->cursor == '\0') {
         token.type = TOKEN_EOF;
         return token;
     }
 
-    if (isdigit((unsigned char)*ctx->cursor)) {
+    if (
+        isdigit((unsigned char)*ctx->cursor) || 
+        (*ctx->cursor == '-' && isdigit((unsigned char)*(ctx->cursor +1)))
+    ) {
         token.type = TOKEN_INT;
-        
+
         int i;
         i = 0;
+
+        if (*ctx->cursor == '-')
+            token.text[i++] = *ctx->cursor++;
 
         while (isdigit((unsigned char)*ctx->cursor) && i < TEXT_SIZE - 1)
             token.text[i++] = *ctx->cursor++;
 
         token.text[i] = '\0';
-        // * instant conversion (no allocation)
+
         token.value = atoi(token.text);
 
         return token;
