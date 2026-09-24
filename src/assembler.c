@@ -135,7 +135,7 @@ typedef struct {
     /*! 
      * \brief Pointer to the current character in input
     */
-    const char* cursor;
+    const char *cursor;
 
     /*!
      * \brief Current line in input
@@ -327,7 +327,7 @@ static VTAToken getNextToken(VTAParserContext *ctx) {
 
         token.text[i] = '\0';
 
-        token.value = atoi(token.text);
+        token.value = atoi(token.text); // ! we could have overflow here
 
         return token;
     }
@@ -380,6 +380,52 @@ static VTAToken getNextToken(VTAParserContext *ctx) {
 
 
 /*!
+ * \brief Parse the micro-operation line. It consumes the EOL/EOF token.
+ * \note Expect: INT, INT, INT EOL
+ * \note Example: 10, 20, 30
+ * 
+ * \param ctx Context parser from the input.
+ * \param firstToken TODO:
+ * \param uopIdx TODO:
+ * \param maxUop TODO:
+*/
+static VTAErr parseUopLine(
+    VTAParserContext    *ctx,
+    VTAToken            firstToken,
+    uint32_t            *uopIdx,
+    int                 maxUop
+) {
+    if (firstToken.type != TOKEN_INT)
+        return VTA_ERR_SYNTAX;
+
+    VTAToken token;
+    token = getNextToken(ctx);
+
+    if (token.type != TOKEN_PUNCTUATION || strcmp(token.text, ",") != 0)
+        return VTA_ERR_SYNTAX;
+
+    token = getNextToken(ctx);
+    if (token.type != TOKEN_INT)
+        return VTA_ERR_SYNTAX;
+
+    token = getNextToken(ctx);
+    if (token.type != TOKEN_PUNCTUATION || strcmp(token.text, ",") != 0)
+        return VTA_ERR_SYNTAX;
+
+    token = getNextToken(ctx);
+    if (token.type != TOKEN_EOL && token.type != TOKEN_EOF)
+        return VTA_ERR_SYNTAX;
+
+    (*uopIdx)++;
+
+    if ((int)(*uopIdx) > maxUop)
+        return VTA_ERR_UOP_BUFFER_FULL;
+
+    return VTA_OK;   
+}
+
+
+/*!
  * \brief Fills the label table.
  *
  * \param asmCode
@@ -412,9 +458,25 @@ static VTAErr makeLT(
         if (token.type == TOKEN_EOF)
             break;
         
+        // * new added thing: we allow empty lines
+        if (token.type == TOKEN_EOL) 
+            continue;
+        
         if (token.type == TOKEN_ERROR) {
             *errLine = ctx.lineNum;
             return VTA_ERR_SYNTAX;
+        }
+
+        if (token.type == TOKEN_INT) {
+            VTAErr status;
+            status = parseUopLine(&ctx, token, &currentUopIdx, maxUop);
+
+            if (status != VTA_OK) {
+                *errLine = ctx.lineNum;
+                return status;
+            }
+
+            continue; // * because parseuopline consumes eol/eof
         }
 
         if (token.type == TOKEN_IDENTIFIER) {
@@ -422,56 +484,41 @@ static VTAErr makeLT(
             nextToken = peekNextToken(&ctx);
 
             if (nextToken.type == TOKEN_PUNCTUATION && strcmp(nextToken.text, ":") == 0) {
-                getNextToken(&ctx); // consumes ":"
+                getNextToken(&ctx); //* consumes ":"
 
-                VTAErr error;
-                error = LT_add(table, token.text, currentUopIdx, ctx.lineNum);
+                VTAErr status;
+                status = LT_add(table, token.text, currentUopIdx, ctx.lineNum);
 
-                if (error != VTA_OK) {
+                if (status != VTA_OK) {
                     *errLine = ctx.lineNum;
-                    return error;
+                    return status;
                 }
 
                 continue;
             }
 
             if (
-                strcmp(token.text, "LOAD")   == 0 || strcmp(token.text, "STORE")    == 0 ||
-                strcmp(token.text, "STOR")   == 0 || strcmp(token.text, "GEMM")     == 0 ||
+                strcmp(token.text, "LOAD")   == 0 ||
+                strcmp(token.text, "STORE")  == 0 || strcmp(token.text, "STOR")     == 0 ||
+                strcmp(token.text, "GEMM")   == 0 || strcmp(token.text, "GEMM.RST") == 0 ||
                 strcmp(token.text, "ALU")    == 0 || strncmp(token.text, "ALU.", 4) == 0 ||
-                strcmp(token.text, "FINISH") == 0 || strcmp(token.text, "NOOP")     == 0 ||
-                strcmp(token.text, "PUSH")   == 0 || strcmp(token.text, "POP")      == 0       
+                strcmp(token.text, "FINISH") == 0 || strcmp(token.text, "NOOP")     == 0 
             ) {
                 IC++;
                 if (IC > maxInsn) {
                     *errLine = ctx.lineNum;
                     return VTA_ERR_INSN_BUFFER_FULL;
                 }
+
+                continue;
             }
+
+            *errLine = ctx.lineNum;
+            return VTA_ERR_UNKNOWN_MNEMONIC;
         }
-        else if (token.type == TOKEN_INT) {
-            // * a sequence like "0, 0, 0" represents an uop
-            currentUopIdx++;
 
-            if ((int)currentUopIdx > maxUop) {
-                *errLine = ctx.lineNum;
-                return VTA_ERR_UOP_BUFFER_FULL;
-            }
-
-            // * consume all other nums and ','
-            while (1) {
-                VTAToken nextToken;
-                nextToken = peekNextToken(&ctx);
-
-                if (
-                    nextToken.type == TOKEN_INT ||
-                    (nextToken.type == TOKEN_PUNCTUATION && strcmp(nextToken.text, ",") == 0)
-                ) 
-                    getNextToken(&ctx);
-                else
-                    break;
-            }
-        }
+        *errLine = ctx.lineNum;
+        return VTA_ERR_SYNTAX;
     }
 
     *estimatedInsn  = IC;
