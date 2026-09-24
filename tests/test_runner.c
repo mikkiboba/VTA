@@ -26,7 +26,7 @@ static void checkStatus(VTAErr status, VTAErr expectedStatus, int *errorCount) {
 }
 
 
-static int _checkOutput(const char *testName, VTAErr status, const char *actual, const char *expected) {
+static int checkOutput(const char *testName, VTAErr status, const char *actual, const char *expected) {
     if (status != VTA_OK) {
         printf(" FAIL! %s returned status [%d].\n\n", testName, status);
         return 1;
@@ -211,7 +211,7 @@ static void gemmInsn(
 
 
 // * helper for below
-static int _countOccurrences(const char *text, const char *pattern) {
+static int countOccurrences(const char *text, const char *pattern) {
     int count;
     count = 0;
 
@@ -265,21 +265,21 @@ static int test_labelReuse(void) {
     }
     
     if (
-        _countOccurrences(out_buf, "lbl1_bgn:") != 1 ||
-        _countOccurrences(out_buf, "lbl1_end:") != 1 ||
-        _countOccurrences(out_buf, "lbl2_bgn:") != 1 ||
-        _countOccurrences(out_buf, "lbl2_end:") != 1 
+        countOccurrences(out_buf, "lbl1_bgn:") != 1 ||
+        countOccurrences(out_buf, "lbl1_end:") != 1 ||
+        countOccurrences(out_buf, "lbl2_bgn:") != 1 ||
+        countOccurrences(out_buf, "lbl2_end:") != 1 
     ) {
         printf(" FAIL! Disassembler returned error %d\n", status);
         error++;
     } 
 
-    if (_countOccurrences(out_buf, "FOR (4, 2) UOP (lbl1_bgn, lbl1_end)") != 2) {
+    if (countOccurrences(out_buf, "FOR (4, 2) UOP (lbl1_bgn, lbl1_end)") != 2) {
         printf(" FAIL! UOP range [0, 2) did not reuse lbl1.\n");
         error++;
     }
 
-    if (_countOccurrences(out_buf, "FOR (4, 2) UOP (lbl2_bgn, lbl2_end)") != 1) {
+    if (countOccurrences(out_buf, "FOR (4, 2) UOP (lbl2_bgn, lbl2_end)") != 1) {
         printf(" FAIL! UOP range [1, 4) did not generate lbl2.\n");
         error++;
     }
@@ -315,18 +315,22 @@ static int test_outputBuffer(void) {
     status = vtaDisassemble(&testInsn, 1, NULL, 0, outBuffer, 0);
     checkStatus(status, VTA_ERR_INVALID_INSN_SIZE, &error);
 
+    testInsn.opcode = VTA_OPCODE_FINISH;
+
     printf(" 6.3 - Passing too small outBuffer\n");
     char tinyBuffer[4];
     status = vtaDisassemble(&testInsn, 1, NULL, 0, tinyBuffer, sizeof(tinyBuffer));
     checkStatus(status, VTA_ERR_OUTPUT_BUFFER_FULL, &error);
 
     printf(" 6.4 - Passing exactly sized output buffer\n");
-    char exactBuffer[9];
+    const char expected[] = "FINISH\n\n";
+    char exactBuffer[sizeof(expected)];
     status = vtaDisassemble(&testInsn, 1, NULL, 0, exactBuffer, sizeof(exactBuffer));
     checkStatus(status, VTA_OK, &error);
 
     if (status == VTA_OK && strcmp(exactBuffer, "FINISH\n\n") != 0) {
         printf(" FAIL! Exact-size buffer contains incorrect output.\n\n");
+        error++;
     }
 
     return error;
@@ -354,7 +358,7 @@ static int test_uopBufferSize(void) {
     int numUop;
     numUop = 4;
 
-    printf(" 7.1 - Passing uop_end (%u) > numUop (%u)", (unsigned)testGemmInsn.uop_end, (unsigned)numUop);
+    printf(" 7.1 - Passing uop_end (%u) > numUop (%u)\n", (unsigned)testGemmInsn.uop_end, (unsigned)numUop);
 
     status = vtaDisassemble(insn, 1, NULL, numUop, outBuffer, sizeof(outBuffer));
     checkStatus(status, VTA_ERR_UOP_OUT_OF_BOUNDS, &error);
@@ -418,7 +422,7 @@ static int test_noop(void) {
     VTAErr status;
     status = vtaDisassemble((VTAGenericInsn *)&insn, 1, NULL, 0, outBuffer, sizeof(outBuffer));
 
-    return _checkOutput("NOOP", status, outBuffer, "NOOP\n\n");
+    return checkOutput("NOOP", status, outBuffer, "NOOP\n\n");
 }
 
 static int test_load(void) {
@@ -444,7 +448,7 @@ static int test_load(void) {
     VTAErr status;
     status = vtaDisassemble((VTAGenericInsn *)&insn, 1, NULL, 0, outBuffer, sizeof(outBuffer));
 
-    error += _checkOutput("LOAD from UOP memory", status, outBuffer, "LOAD(BUF[7], MEM[11, 3])\n\n");
+    error += checkOutput("LOAD from UOP memory", status, outBuffer, "LOAD(BUF[7], MEM[11, 3])\n\n");
 
     printf(" 10.2 - Normal 2d load.\n");
 
@@ -460,7 +464,7 @@ static int test_load(void) {
     insn.x_stride       = 16;
 
     status = vtaDisassemble((VTAGenericInsn *)&insn, 1, NULL, 0, outBuffer, sizeof(outBuffer));
-    error += _checkOutput("2D LOAD", status, outBuffer, "LOAD(BUF[4], MEM[100, 2, 8, 16])\n\n");
+    error += checkOutput("2D LOAD", status, outBuffer, "LOAD(BUF[4], MEM[100, 2, 8, 16])\n\n");
 
     return error;
 }
@@ -485,7 +489,7 @@ static int test_store(void) {
     VTAErr status;
     status = vtaDisassemble((VTAGenericInsn *)&insn, 1, NULL, 0, outBuffer, sizeof(outBuffer));
 
-    return _checkOutput("STORE", status, outBuffer, "STOR(MEM[200, 2, 8, 16], ACC[5])\n\n");
+    return checkOutput("STORE", status, outBuffer, "STOR(MEM[200, 2, 8, 16], ACC[5])\n\n");
 }
 
 
@@ -513,7 +517,37 @@ static int test_alu(void) {
     VTAErr status;
     status = vtaDisassemble((VTAGenericInsn *)&insn, 1, NULL, 2, outBuffer, sizeof(outBuffer));
 
-    error += _checkOutput("ALU with intermediate", status, outBuffer, "FOR (3, 4) UOP (lbl1_bgn, lbl1_end)\nALU.OP(DST[0:2], -7)\n\n");
+    error += checkOutput("ALU with intermediate", status, outBuffer, "FOR (3, 4) UOP (lbl1_bgn, lbl1_end)\nALU.OP(DST[0:2], -7)\n\n");
+
+    printf(" 12.2 - ALU without immediate.\n");
+
+    memset(&insn, 0, sizeof(insn));
+    memset(outBuffer, 0, sizeof(outBuffer));
+
+    insn.opcode = VTA_OPCODE_ALU;
+    insn.uop_bgn = 1;
+    insn.uop_end = 4;
+    insn.iter_out = 2;
+    insn.iter_in = 5;
+    insn.use_imm = 0;
+
+    status = vtaDisassemble(
+        (VTAGenericInsn *)&insn,
+        1,
+        NULL,
+        4,
+        outBuffer,
+        sizeof(outBuffer)
+    );
+
+    error += checkOutput(
+        "ALU without immediate",
+        status,
+        outBuffer,
+        "FOR (2, 5) UOP (lbl1_bgn, lbl1_end)\n"
+        "ALU.OP(DST[1:4], SRC[1:4])\n\n"
+    );
+
 
     return error;
 }
@@ -548,7 +582,7 @@ static int test_gemm(void)
         sizeof(outBuffer)
     );
 
-    error += _checkOutput(
+    error += checkOutput(
         "GEMM",
         status,
         outBuffer,
@@ -577,7 +611,7 @@ static int test_gemm(void)
         sizeof(outBuffer)
     );
 
-    error += _checkOutput(
+    error += checkOutput(
         "GEMM.RST",
         status,
         outBuffer,
@@ -626,7 +660,7 @@ static int test_dependencies(void)
         sizeof(outBuffer)
     );
 
-    error += _checkOutput(
+    error += checkOutput(
         "LOAD dependencies",
         status,
         outBuffer,
@@ -665,7 +699,7 @@ static int test_dependencies(void)
         sizeof(outBuffer)
     );
 
-    error += _checkOutput(
+    error += checkOutput(
         "STORE dependencies",
         status,
         outBuffer,
@@ -703,7 +737,7 @@ static int test_dependencies(void)
         sizeof(outBuffer)
     );
 
-    error += _checkOutput(
+    error += checkOutput(
         "GEMM dependencies",
         status,
         outBuffer,
