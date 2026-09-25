@@ -132,9 +132,89 @@ static int test_assemblerTooManyUopFields(void) {
 }
 
 
+static int test_simpleInstructions(void)
+{
+    printHeaderA("4. Check FINISH and NOOP parsing.");
+
+    int error = 0;
+
+    VTAGenericInsn insnBuffer[8];
+    VTAUop uopBuffer[8];
+
+    memset(insnBuffer, 0, sizeof(insnBuffer));
+    memset(uopBuffer, 0, sizeof(uopBuffer));
+
+    const char *asmCode =
+        "FINISH\n"
+        "NOOP\n";
+
+    int numInsn = 0;
+    int numUop = 0;
+
+    VTAErr status = vtaAssemble(asmCode, insnBuffer, 8, &numInsn, uopBuffer, 8, &numUop);
+
+    if (status != VTA_OK) {
+        printf(" FAIL! vtaAssemble returned status [%d].\n", status);
+        vtaErrorPrint(status, -1);
+        return 1;
+    }
+
+    if (numInsn != 2) {
+        printf(" FAIL! Expected 2 instructions, got %d.\n", numInsn);
+        error++;
+    }
+
+    if (numUop != 0) {
+        printf(" FAIL! Expected 0 UOPs, got %d.\n", numUop);
+        error++;
+    }
+
+    if (error == 0)
+        printf(" PASS! FINISH and NOOP parsed correctly.\n\n");
+
+    return error;
+}
+
+
+static int test_invalidSimpleInstruction(void)
+{
+    printHeaderA("5. Check invalid FINISH/NOOP syntax.");
+
+    int error = 0;
+
+    VTAGenericInsn insnBuffer[8];
+    VTAUop uopBuffer[8];
+
+    memset(insnBuffer, 0, sizeof(insnBuffer));
+    memset(uopBuffer, 0, sizeof(uopBuffer));
+
+    const char *asmCode =
+        "FINISH(123)\n";
+
+    int numInsn = 0;
+    int numUop = 0;
+
+    VTAErr status = vtaAssemble(asmCode, insnBuffer, 8, &numInsn, uopBuffer, 8, &numUop);
+
+    if (status != VTA_ERR_SYNTAX) {
+        printf(" FAIL! Expected VTA_ERR_SYNTAX (%d), got %d.\n", VTA_ERR_SYNTAX, status);
+        vtaErrorPrint(status, -1);
+        error++;
+    }
+    else {
+        printf(" PASS! Invalid FINISH syntax rejected correctly.\n\n");
+    }
+
+    return error;
+}
+
+
 void executeTestsAssembler(int *error) {
     *error += test_uopDetection();
     *error += test_invalidUop();
+    *error += test_assemblerTooManyUopFields();
+    *error += test_simpleInstructions();
+    *error += test_invalidSimpleInstruction();
 }
 
 
