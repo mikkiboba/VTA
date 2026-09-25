@@ -30,7 +30,7 @@ static int test_uopDetection(void) {
 
     const char *asmCode;
     asmCode =
-        "LOAD(BUF[0], MEM[100, 2, 8, 16])\n"
+        "LOAD(INP[0], MEM[100, 2, 8, 16])\n"
         "10, 20, 30\n"
         "FINISH\n";
 
@@ -170,7 +170,7 @@ static int test_simpleInstructions(void)
     }
 
     if (error == 0)
-        printf(" PASS! FINISH and NOOP parsed correctly.\n\n");
+        printf(" PASS! FINISH and NOOP parsed correctly.\n");
 
     return error;
 }
@@ -209,12 +209,125 @@ static int test_invalidSimpleInstruction(void)
 }
 
 
+static int test_loadParsing(void)
+{
+    printHeaderA("6. Check LOAD parsing.");
+
+    int error = 0;
+
+    VTAGenericInsn insnBuffer[8];
+    VTAUop uopBuffer[8];
+
+    memset(insnBuffer, 0, sizeof(insnBuffer));
+    memset(uopBuffer, 0, sizeof(uopBuffer));
+
+    const char *asmCode =
+        "LOAD(INP[4], MEM[100, 2, 8, 16])\n";
+
+    int numInsn = 0;
+    int numUop = 0;
+
+    VTAErr status;
+    status = vtaAssemble(asmCode, insnBuffer, 8, &numInsn, uopBuffer, 8, &numUop);
+
+    if (status != VTA_OK) {
+        printf(" FAIL! LOAD returned status [%d].\n", status);
+        vtaErrorPrint(status, -1);
+
+        return 1;
+    }
+
+    if (numInsn != 1) {
+        printf(" FAIL! Expected 1 instruction, got %d.\n", numInsn);
+        error++;
+    }
+
+    if (numUop != 0) {
+        printf(" FAIL! Expected 0 UOPs, got %d.\n", numUop);
+        error++;
+    }
+
+    if (error == 0) {
+        printf(" PASS! LOAD syntax parsed correctly.\n\n");
+    }
+
+    return error;
+}
+
+
+static int test_invalidLoadMemoryType(void)
+{
+    printHeaderA("7. Check invalid LOAD memory type.");
+
+    VTAGenericInsn insnBuffer[8];
+    VTAUop uopBuffer[8];
+
+    memset(insnBuffer, 0, sizeof(insnBuffer));
+    memset(uopBuffer, 0, sizeof(uopBuffer));
+
+    const char *asmCode =
+        "LOAD(XYZ[0], MEM[100, 2, 8, 16])\n";
+
+    int numInsn = 0;
+    int numUop = 0;
+
+    VTAErr status;
+    status = vtaAssemble(asmCode, insnBuffer, 8, &numInsn, uopBuffer, 8, &numUop);
+
+    if (status != VTA_ERR_UNKNOWN_MNEMONIC) {
+        printf(" FAIL! Expected VTA_ERR_UNKNOWN_MNEMONIC (%d), got %d.\n", VTA_ERR_UNKNOWN_MNEMONIC, status);
+        vtaErrorPrint(status, -1);
+
+        return 1;
+    }
+
+    printf(" PASS! Invalid LOAD memory type rejected correctly.\n\n");
+
+    return 0;
+}
+
+
+static int test_invalidLoadArguments(void)
+{
+    printHeaderA("8. Check invalid LOAD arguments.");
+
+    VTAGenericInsn insnBuffer[8];
+    VTAUop uopBuffer[8];
+
+    memset(insnBuffer, 0, sizeof(insnBuffer));
+    memset(uopBuffer, 0, sizeof(uopBuffer));
+
+    const char *asmCode =
+        "LOAD(INP[0], MEM[100, 8])\n";
+
+    int numInsn = 0;
+    int numUop = 0;
+
+    VTAErr status;
+    status = vtaAssemble(asmCode, insnBuffer, 8, &numInsn, uopBuffer, 8, &numUop);
+
+    if (status != VTA_ERR_SYNTAX) {
+        printf(" FAIL! Expected VTA_ERR_SYNTAX (%d), got %d.\n", VTA_ERR_SYNTAX, status);
+        vtaErrorPrint(status, -1);
+
+        return 1;
+    }
+
+    printf(" PASS! Invalid LOAD arguments rejected correctly.\n\n");
+
+    return 0;
+}
+
+
 void executeTestsAssembler(int *error) {
     *error += test_uopDetection();
     *error += test_invalidUop();
     *error += test_assemblerTooManyUopFields();
     *error += test_simpleInstructions();
     *error += test_invalidSimpleInstruction();
+    *error += test_loadParsing();
+    *error += test_invalidLoadMemoryType();
+    *error += test_invalidLoadArguments();
 }
 
 
