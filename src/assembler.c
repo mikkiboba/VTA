@@ -380,6 +380,23 @@ static VTAToken getNextToken(VTAParserContext *ctx) {
 
 
 /*!
+ * \brief TODO:
+*/
+static VTAErr skipToEOL(VTAParserContext *ctx) {
+    while (1) {
+        VTAToken token;
+        token = getNextToken(ctx);
+
+        if (token.type == TOKEN_EOL || token.type == TOKEN_EOF)
+            return VTA_OK;
+        
+        if (token.type == TOKEN_ERROR) 
+            return VTA_ERR_SYNTAX;
+    }
+}
+
+
+/*!
  * \brief Parse the micro-operation line. It consumes the EOL/EOF token.
  * \note Expect: INT, INT, INT EOL
  * \note Example: 10, 20, 30
@@ -413,6 +430,10 @@ static VTAErr parseUopLine(
         return VTA_ERR_SYNTAX;
 
     token = getNextToken(ctx);
+    if (token.type != TOKEN_INT)
+        return VTA_ERR_SYNTAX;
+
+    token = getNextToken(ctx);
     if (token.type != TOKEN_EOL && token.type != TOKEN_EOF)
         return VTA_ERR_SYNTAX;
 
@@ -422,6 +443,37 @@ static VTAErr parseUopLine(
         return VTA_ERR_UOP_BUFFER_FULL;
 
     return VTA_OK;   
+}
+
+
+/*!
+ * \brief Parse the end of an uop. It must end with a "end of line"/"end of file" token.
+ * 
+ * \param ctx Context for the input.
+*/
+static VTAErr parseInstructionEnd(VTAParserContext *ctx) {
+    VTAToken token;
+    token = getNextToken(ctx);
+
+    if (token.type == TOKEN_EOL || token.type == TOKEN_EOF)
+        return VTA_OK;
+
+    return VTA_ERR_SYNTAX;
+}
+
+
+/*!
+ * \todo 
+*/
+static VTAErr parseInstruction(VTAParserContext *ctx, const VTAToken *token, VTAParsedInsn *parsedInsn) {
+    if (strcmp(token->text, "FINISH") == 0)
+        parsedInsn->kind = ASM_FINISH;
+    else if (strcmp(token->text, "NOOP") == 0)
+        parsedInsn->kind = ASM_NOOP;
+    else
+        return VTA_ERR_UNKNOWN_MNEMONIC;
+
+    return parseInstructionEnd(ctx);
 }
 
 
@@ -498,16 +550,48 @@ static VTAErr makeLT(
             }
 
             if (
+                strcmp(token.text, "FINISH") == 0 || strcmp(token.text, "NOOP")
+            ) {
+                VTAParsedInsn parsedInsn;
+                memset(&parsedInsn, 0, sizeof(parsedInsn));
+
+                VTAErr status;
+                status = parseInstruction(&ctx, &token, &parsedInsn);
+
+                if (status != VTA_OK) {
+                    *errLine = ctx.lineNum;
+                    return status;
+                }
+
+                IC++;
+
+                if (IC > maxInsn) {
+                    *errLine = ctx.lineNum;
+                    return VTA_ERR_INSN_BUFFER_FULL; 
+                }
+                
+                continue;
+            }
+
+            if (
                 strcmp(token.text, "LOAD")   == 0 ||
                 strcmp(token.text, "STORE")  == 0 || strcmp(token.text, "STOR")     == 0 ||
                 strcmp(token.text, "GEMM")   == 0 || strcmp(token.text, "GEMM.RST") == 0 ||
-                strcmp(token.text, "ALU")    == 0 || strncmp(token.text, "ALU.", 4) == 0 ||
-                strcmp(token.text, "FINISH") == 0 || strcmp(token.text, "NOOP")     == 0 
+                strcmp(token.text, "ALU")    == 0 || strncmp(token.text, "ALU.", 4) == 0 //||
+                //strcmp(token.text, "FINISH") == 0 || strcmp(token.text, "NOOP")     == 0 
             ) {
                 IC++;
                 if (IC > maxInsn) {
                     *errLine = ctx.lineNum;
                     return VTA_ERR_INSN_BUFFER_FULL;
+                }
+
+                VTAErr status;
+                status = skipToEOL(&ctx);
+
+                if (status != VTA_OK) {
+                    *errLine = ctx.lineNum;
+                    return status;
                 }
 
                 continue;
