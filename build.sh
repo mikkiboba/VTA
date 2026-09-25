@@ -40,8 +40,6 @@ rm -f \
     "$BUILD_DIR/assembler.o"                \
     "$BUILD_DIR/disassembler.o"             \
     "$BUILD_DIR/test_runner.o"              \
-    "$BUILD_DIR/test_runner_disassembler.o"  \
-    "$BUILD_DIR/test_runner_assembler.o"     \
     "$BUILD_DIR/libvta.a"                   \
     "$BUILD_DIR/vtaBuild"
 
@@ -88,19 +86,14 @@ ar rcs \
     "$BUILD_DIR/disassembler.o"
 
 
-echo ">>> Compiling test runners..."
-
-gcc "${COMMON_CFLAGS[@]}" \
-    -c "$SCRIPT_DIR/tests/test_runner_disassembler.c" \
-
-gcc "${COMMON_CFLAGS[@]}" \
-    -c "$SCRIPT_DIR/tests/test_runner_assembler.c" \
+echo ">>> Compiling test runner..."
 
 gcc "${COMMON_CFLAGS[@]}" \
     -c "$SCRIPT_DIR/tests/test_runner.c" \
     -o "$BUILD_DIR/test_runner.o"
 
-echo ">>> Linking test runners with libvta.a..."
+
+echo ">>> Linking test runner with libvta.a..."
 
 
 gcc \
