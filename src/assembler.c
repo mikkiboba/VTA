@@ -457,6 +457,20 @@ static VTAErr parseUopLine(
     if (token.value < 0)
         return VTA_ERR_OUT_OF_RANGE;
 
+    parsedUop->src_idx = (uint32_t)token.value;
+
+    token = getNextToken(ctx);
+
+    if (token.type != TOKEN_PUNCTUATION || strcmp(token.text, ",") != 0) 
+        return VTA_ERR_SYNTAX;
+
+    token = getNextToken(ctx);
+    if (token.type != TOKEN_INT)
+        return VTA_ERR_SYNTAX;
+    
+    if (token.value < 0) 
+        return VTA_ERR_OUT_OF_RANGE;
+
     parsedUop->wgt_idx = (uint32_t)token.value;
 
     token = getNextToken(ctx);
