@@ -487,7 +487,7 @@ static VTAErr parseInstructionEnd(VTAParserContext *ctx) {
 
 
 static VTAErr parseLoad(VTAParserContext *ctx, VTAParsedInsn *parsedInsn) {
-    memset(parsedInsn, 0, sizeof(parsedInsn));
+    memset(parsedInsn, 0, sizeof(*parsedInsn));
 
     parsedInsn->kind            = ASM_LOAD;
     parsedInsn->data.mem.opcode = VTA_OPCODE_LOAD;
