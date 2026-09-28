@@ -402,26 +402,28 @@ static int test_loadEncoding(void) {
 }
 
 
-static int test_uopEncoding(void) {
+static int test_uopEncoding(void)
+{
     printHeaderA("10. Check UOP binary encoding.");
 
     int error;
     error = 0;
 
     VTAGenericInsn insnBuffer[8];
-    memset(insnBuffer, 0, sizeof(insnBuffer));
-
     VTAUop uopBuffer[8];
+
+    memset(insnBuffer, 0, sizeof(insnBuffer));
     memset(uopBuffer, 0, sizeof(uopBuffer));
 
-    const char *asmCode;
-    asmCode = "10, 20, 30\n";
+    const char *asmCode =
+        "10, 20, 30\n"
+        "11, 21, 31\n";
 
-    int numInsn, numUop;
-    numInsn = 0;
-    numUop  = 0;
+    int numInsn = 0;
+    int numUop = 0;
 
     VTAErr status;
+
     status = vtaAssemble(asmCode, insnBuffer, 8, &numInsn, uopBuffer, 8, &numUop);
 
     if (status != VTA_OK) {
@@ -435,23 +437,38 @@ static int test_uopEncoding(void) {
         error++;
     }
 
-    if (numUop != 1) {
-        printf(" FAIL! Expected 1 UOP, got %d.\n", numUop);
+    if (numUop != 2) {
+        printf(" FAIL! Expected 2 UOPs, got %d.\n", numUop);
         error++;
     }
 
     if (uopBuffer[0].dst_idx != 10) {
-        printf(" FAIL! Wrong dst_idx: got %d.\n", (int)uopBuffer[0].dst_idx);
+        printf(" FAIL! UOP[0] wrong dst_idx: got %u.\n", (unsigned)uopBuffer[0].dst_idx);
         error++;
     }
 
     if (uopBuffer[0].src_idx != 20) {
-        printf(" FAIL! Wrong src_idx: got %d.\n", (int)uopBuffer[0].src_idx);
+        printf(" FAIL! UOP[0] wrong src_idx: got %u.\n", (unsigned)uopBuffer[0].src_idx);
         error++;
     }
 
     if (uopBuffer[0].wgt_idx != 30) {
-        printf(" FAIL! Wrong wgt_idx: got %d.\n", (int)uopBuffer[0].wgt_idx);
+        printf(" FAIL! UOP[0] wrong wgt_idx: got %u.\n", (unsigned)uopBuffer[0].wgt_idx);
+        error++;
+    }
+
+    if (uopBuffer[1].dst_idx != 11) {
+        printf(" FAIL! UOP[1] wrong dst_idx: got %u.\n", (unsigned)uopBuffer[1].dst_idx);
+        error++;
+    }
+
+    if (uopBuffer[1].src_idx != 21) {
+        printf(" FAIL! UOP[1] wrong src_idx: got %u.\n", (unsigned)uopBuffer[1].src_idx);
+        error++;
+    }
+
+    if (uopBuffer[1].wgt_idx != 31) {
+        printf(" FAIL! UOP[1] wrong wgt_idx: got %u.\n", (unsigned)uopBuffer[1].wgt_idx);
         error++;
     }
 
