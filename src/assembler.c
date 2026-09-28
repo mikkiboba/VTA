@@ -427,46 +427,43 @@ static VTAErr skipToEOL(VTAParserContext *ctx) {
  * 
  * \param ctx Context parser from the input.
  * \param firstToken TODO:
- * \param uopIdx TODO:
- * \param maxUop TODO:
+ * \param parsedUop TODO:
 */
 static VTAErr parseUopLine(
     VTAParserContext    *ctx,
     VTAToken            firstToken,
-    uint32_t            *uopIdx,
-    int                 maxUop
+    VTAUop              *parsedUop
 ) {
+    memset(parsedUop, 0, sizeof(*parsedUop));
+
     if (firstToken.type != TOKEN_INT)
         return VTA_ERR_SYNTAX;
+    
+    if (firstToken.value < 0)
+        return VTA_ERR_OUT_OF_RANGE;
+
+    parsedUop->dst_idx = (uint32_t)firstToken.value;
 
     VTAToken token;
     token = getNextToken(ctx);
 
-    if (token.type != TOKEN_PUNCTUATION || strcmp(token.text, ",") != 0)
+    if (token.type != TOKEN_PUNCTUATION || strcmp(token.text, ",") != 0) 
         return VTA_ERR_SYNTAX;
 
     token = getNextToken(ctx);
     if (token.type != TOKEN_INT)
         return VTA_ERR_SYNTAX;
+    
+    if (token.value < 0)
+        return VTA_ERR_OUT_OF_RANGE;
 
-    token = getNextToken(ctx);
-    if (token.type != TOKEN_PUNCTUATION || strcmp(token.text, ",") != 0)
-        return VTA_ERR_SYNTAX;
-
-    token = getNextToken(ctx);
-    if (token.type != TOKEN_INT)
-        return VTA_ERR_SYNTAX;
+    parsedUop->wgt_idx = (uint32_t)token.value;
 
     token = getNextToken(ctx);
     if (token.type != TOKEN_EOL && token.type != TOKEN_EOF)
         return VTA_ERR_SYNTAX;
 
-    (*uopIdx)++;
-
-    if ((int)(*uopIdx) > maxUop)
-        return VTA_ERR_UOP_BUFFER_FULL;
-
-    return VTA_OK;   
+    return VTA_OK;
 }
 
 
@@ -724,12 +721,20 @@ static VTAErr makeLT(
         }
 
         if (token.type == TOKEN_INT) {
+            VTAUop parsedUop;
             VTAErr status;
-            status = parseUopLine(&ctx, token, &currentUopIdx, maxUop);
+            status = parseUopLine(&ctx, token, &parsedUop);
 
             if (status != VTA_OK) {
                 *errLine = ctx.lineNum;
                 return status;
+            }
+
+            currentUopIdx++;
+
+            if (currentUopIdx > (uint32_t)maxUop) {
+                *errLine = ctx.lineNum;
+                return VTA_ERR_UOP_BUFFER_FULL;
             }
 
             continue; // * because parseuopline consumes eol/eof
@@ -823,6 +828,7 @@ static VTAErr encodeInstructions(
     VTAGenericInsn  *insnBuffer,
     int             maxInsn,
     int             *numInsn,
+    VTAUop          *uopBuffer,
     int             maxUop
 ) {
     VTAParserContext ctx;
@@ -848,11 +854,16 @@ static VTAErr encodeInstructions(
             return VTA_ERR_SYNTAX;
 
         if (token.type == TOKEN_INT) {
+            if (currentUopIdx >= (uint32_t)maxUop)
+                return VTA_ERR_UOP_BUFFER_FULL;
+
             VTAErr status;
-            status = parseUopLine(&ctx, token, &currentUopIdx, maxUop); // da rivedere questa riga
+            status = parseUopLine(&ctx, token, &uopBuffer[currentUopIdx]); // da rivedere questa riga
 
             if (status != VTA_OK)
                 return status;
+
+            currentUopIdx++;
             
             continue;
         }
@@ -952,7 +963,7 @@ VTAErr vtaAssemble(
     
     // *: Step 2: binary encoding
     VTAErr statusEncode;
-    statusEncode = encodeInstructions(asmCode, insnBuffer, maxInsn, numInsn, maxUop); // * da rivedere
+    statusEncode = encodeInstructions(asmCode, insnBuffer, maxInsn, numInsn, uopBuffer, maxUop); // * da rivedere
     
     if (statusEncode != VTA_OK)
         return statusEncode;
