@@ -402,6 +402,66 @@ static int test_loadEncoding(void) {
 }
 
 
+static int test_uopEncoding(void) {
+    printHeaderA("10. Check UOP binary encoding.");
+
+    int error;
+    error = 0;
+
+    VTAGenericInsn insnBuffer[8];
+    memset(insnBuffer, 0, sizeof(insnBuffer));
+
+    VTAUop uopBuffer[8];
+    memset(uopBuffer, 0, sizeof(uopBuffer));
+
+    const char *asmCode;
+    asmCode = "10, 20, 30\n";
+
+    int numInsn, numUop;
+    numInsn = 0;
+    numUop  = 0;
+
+    VTAErr status;
+    status = vtaAssemble(asmCode, insnBuffer, 8, &numInsn, uopBuffer, 8, &numUop);
+
+    if (status != VTA_OK) {
+        printf(" FAIL! vtaAssemble returned status [%d].\n", status);
+        vtaErrorPrint(status, -1);
+        return 1;
+    }
+
+    if (numInsn != 0) {
+        printf(" FAIL! Expected 0 instructions, got %d.\n", numInsn);
+        error++;
+    }
+
+    if (numUop != 1) {
+        printf(" FAIL! Expected 1 UOP, got %d.\n", numUop);
+        error++;
+    }
+
+    if (uopBuffer[0].dst_idx != 10) {
+        printf(" FAIL! Wrong dst_idx: got %d.\n", (int)uopBuffer[0].dst_idx);
+        error++;
+    }
+
+    if (uopBuffer[0].src_idx != 20) {
+        printf(" FAIL! Wrong src_idx: got %d.\n", (int)uopBuffer[0].src_idx);
+        error++;
+    }
+
+    if (uopBuffer[0].wgt_idx != 30) {
+        printf(" FAIL! Wrong wgt_idx: got %d.\n", (int)uopBuffer[0].wgt_idx);
+        error++;
+    }
+
+    if (error == 0)
+        printf(" PASS! UOP fields encoded correctly.\n");
+
+    return error;
+}
+
+
 void executeTestsAssembler(int *error) {
     *error += test_uopDetection();
     *error += test_invalidUop();
@@ -412,6 +472,7 @@ void executeTestsAssembler(int *error) {
     *error += test_invalidLoadMemoryType();
     *error += test_invalidLoadArguments();
     *error += test_loadEncoding();
+    *error += test_uopEncoding();
 }
 
 
