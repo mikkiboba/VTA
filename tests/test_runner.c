@@ -124,6 +124,7 @@ static int test_assemblerTooManyUopFields(void) {
     if (status != VTA_ERR_SYNTAX) {
         printf(" FAIL! Expected VTA_ERR_SYNTAX (%d), got %d.\n", VTA_ERR_SYNTAX, status);
         vtaErrorPrint(status, -1);
+        error++;
     } else {
         printf(" PASS! Extra UOP field rejected correctly.\n");
     }
@@ -479,6 +480,84 @@ static int test_uopEncoding(void)
 }
 
 
+static int test_storeEncoding(void)
+{
+    printHeaderA("11. Check STORE binary encoding.");
+
+    int error = 0;
+
+    VTAGenericInsn insnBuffer[8];
+    VTAUop uopBuffer[8];
+
+    memset(insnBuffer, 0, sizeof(insnBuffer));
+    memset(uopBuffer, 0, sizeof(uopBuffer));
+
+    const char *asmCode =
+        "STORE(MEM[200, 2, 8, 16], ACC[5])\n";
+
+    int numInsn = 0;
+    int numUop = 0;
+
+    VTAErr status;
+
+    status = vtaAssemble(asmCode, insnBuffer, 8, &numInsn, uopBuffer, 8, &numUop);
+
+    if (status != VTA_OK) {
+        printf(" FAIL! vtaAssemble returned status [%d].\n", status);
+        vtaErrorPrint(status, -1);
+        return 1;
+    }
+
+    if (numInsn != 1) {
+        printf(" FAIL! Expected 1 instruction, got %d.\n", numInsn);
+        error++;
+    }
+
+    if (numUop != 0) {
+        printf(" FAIL! Expected 0 UOPs, got %d.\n", numUop);
+        error++;
+    }
+
+    VTAMemInsn *insn;
+    insn = (VTAMemInsn *)&insnBuffer[0];
+
+    if (insn->opcode != VTA_OPCODE_STORE) {
+        printf(" FAIL! Wrong opcode: got %u.\n", (unsigned)insn->opcode);
+        error++;
+    }
+
+    if (insn->sram_base != 5) {
+        printf(" FAIL! Wrong sram_base: got %u.\n", (unsigned)insn->sram_base);
+        error++;
+    }
+
+    if (insn->dram_base != 200) {
+        printf(" FAIL! Wrong dram_base: got %u.\n", (unsigned)insn->dram_base);
+        error++;
+    }
+
+    if (insn->y_size != 2) {
+        printf(" FAIL! Wrong y_size: got %u.\n", (unsigned)insn->y_size);
+        error++;
+    }
+
+    if (insn->x_size != 8) {
+        printf(" FAIL! Wrong x_size: got %u.\n", (unsigned)insn->x_size);
+        error++;
+    }
+
+    if (insn->x_stride != 16) {
+        printf(" FAIL! Wrong x_stride: got %u.\n", (unsigned)insn->x_stride);
+        error++;
+    }
+
+    if (error == 0)
+        printf(" PASS! STORE fields encoded correctly.\n");
+
+    return error;
+}
+
+
 void executeTestsAssembler(int *error) {
     *error += test_uopDetection();
     *error += test_invalidUop();
@@ -490,6 +569,7 @@ void executeTestsAssembler(int *error) {
     *error += test_invalidLoadArguments();
     *error += test_loadEncoding();
     *error += test_uopEncoding();
+    *error += test_storeEncoding();
 }
 
 
@@ -508,16 +588,6 @@ int _executeA(void) {
 
     return error;
 }
-
-
-#include <stdio.h>
-#include <string.h>
-#include <stdint.h>
-#include <vta/hw_spec.h>
-
-#include "vta.h"
-
-#define OUT_BUF_SIZE 2048
 
 
 static void printHeaderD(const char *testName) {
