@@ -558,6 +558,323 @@ static int test_storeEncoding(void)
 }
 
 
+static int test_gemmEnconding(void) {
+    printHeaderA("12. Check GEMM binary encoding.");
+
+    int error;
+    error = 0;
+
+    VTAGenericInsn  insnBuffer[8];
+    memset(insnBuffer, 0, sizeof(insnBuffer));
+
+    VTAUop uopBuffer[8];
+    memset(uopBuffer, 0, sizeof(uopBuffer));
+
+    const char *asmCode =
+        "lbl1_bgn:\n"
+        "10, 20, 30\n"
+        "11, 21, 31\n"
+        "12, 22, 32\n"
+        "lbl1_end:\n"
+        "FOR (2, 4) UOP (lbl1_bgn, lbl1_end)\n"
+        "GEMM(ACC[0:3], INP[0:3], WGT[0:3])\n";
+
+    int numInsn, numUop;
+    numInsn = 0;
+    numUop  = 0;
+
+    VTAErr status;
+    status = vtaAssemble(asmCode, insnBuffer, 8, &numInsn, uopBuffer, 8, &numUop);
+    if (status != VTA_OK) {
+        printf(" FAIL! vtaAssemble returned status [%d].\n", status);
+        vtaErrorPrint(status, -1);
+        return 1;
+    }
+
+    if (numInsn < 1) {
+        printf(" FAIL! Expected 1 instruction, got %d.\n", numInsn);
+        error++;
+    }
+
+    if (numUop != 3) {
+        printf(" FAIL! Expected 3 UOPs, got %d.\n", numUop);
+        error++;
+    }
+
+    VTAGemInsn *insn;
+    insn = (VTAGemInsn *)&insnBuffer[0];
+
+    if (insn->opcode != VTA_OPCODE_GEMM) {
+        printf(" FAIL! Wrong opcode: got %d.\n", (unsigned)insn->opcode);
+        error++;
+    }
+
+    if (insn->uop_bgn != 0) {
+        printf(" FAIL! Wrong uop_bgn: got %d.\n", (unsigned)insn->uop_bgn);
+        error++;
+    }
+
+    if (insn->uop_end != 3) {
+        printf(" FAIL! Wrong uop_end: got %u.\n", (unsigned)insn->uop_end);
+        error++;
+    }
+
+    if (insn->iter_out != 2) {
+        printf(" FAIL! Wrong iter_out: got %u.\n", (unsigned)insn->iter_out);
+        error++;
+    }
+
+    if (insn->iter_in != 4) {
+        printf(" FAIL! Wrong iter_in: got %u.\n", (unsigned)insn->iter_in);
+        error++;
+    }
+
+    if (insn->reset_reg != 0) {
+        printf(" FAIL! Wrong reset_reg: got %u.\n", (unsigned)insn->reset_reg);
+        error++;
+    }
+
+    if (error == 0)
+        printf(" PASS! GEMM fields encoded correctly.\n");
+
+    return error;
+
+
+
+
+}
+
+
+static int test_gemmLabelResolution(void)
+{
+    printHeaderA("13. Check GEMM label resolution.");
+
+    int error = 0;
+
+    VTAGenericInsn insnBuffer[8];
+    VTAUop uopBuffer[8];
+
+    memset(insnBuffer, 0, sizeof(insnBuffer));
+    memset(uopBuffer, 0, sizeof(uopBuffer));
+
+    const char *asmCode =
+        "lbl1_bgn:\n"
+        "10, 20, 30\n"
+        "11, 21, 31\n"
+        "12, 22, 32\n"
+        "lbl1_end:\n"
+        "FOR (2, 4) UOP (lbl1_bgn, lbl1_end)\n"
+        "GEMM(ACC[0:3], INP[0:3], WGT[0:3])\n";
+
+    int numInsn = 0;
+    int numUop = 0;
+
+    VTAErr status;
+
+    status = vtaAssemble(
+        asmCode,
+        insnBuffer,
+        8,
+        &numInsn,
+        uopBuffer,
+        8,
+        &numUop
+    );
+
+    if (status != VTA_OK) {
+        printf(
+            " FAIL! vtaAssemble returned status [%d].\n",
+            status
+        );
+        vtaErrorPrint(status, -1);
+        return 1;
+    }
+
+    if (numInsn != 1) {
+        printf(
+            " FAIL! Expected 1 instruction, got %d.\n",
+            numInsn
+        );
+        error++;
+    }
+
+    if (numUop != 3) {
+        printf(
+            " FAIL! Expected 3 UOPs, got %d.\n",
+            numUop
+        );
+        error++;
+    }
+
+    VTAGemInsn *insn;
+    insn = (VTAGemInsn *)&insnBuffer[0];
+
+    if (insn->opcode != VTA_OPCODE_GEMM) {
+        printf(
+            " FAIL! Wrong opcode: got %u.\n",
+            (unsigned)insn->opcode
+        );
+        error++;
+    }
+
+    if (insn->uop_bgn != 0) {
+        printf(
+            " FAIL! Expected uop_bgn = 0, got %u.\n",
+            (unsigned)insn->uop_bgn
+        );
+        error++;
+    }
+
+    if (insn->uop_end != 3) {
+        printf(
+            " FAIL! Expected uop_end = 3, got %u.\n",
+            (unsigned)insn->uop_end
+        );
+        error++;
+    }
+
+    if (insn->iter_out != 2) {
+        printf(
+            " FAIL! Expected iter_out = 2, got %u.\n",
+            (unsigned)insn->iter_out
+        );
+        error++;
+    }
+
+    if (insn->iter_in != 4) {
+        printf(
+            " FAIL! Expected iter_in = 4, got %u.\n",
+            (unsigned)insn->iter_in
+        );
+        error++;
+    }
+
+    if (error == 0)
+        printf(" PASS! GEMM labels resolved correctly.\n");
+
+    return error;
+}
+
+
+static int test_gemmRstEncoding(void)
+{
+    printHeaderA("14. Check GEMM.RST binary encoding.");
+
+    int error = 0;
+
+    VTAGenericInsn insnBuffer[8];
+    VTAUop uopBuffer[8];
+
+    memset(insnBuffer, 0, sizeof(insnBuffer));
+    memset(uopBuffer, 0, sizeof(uopBuffer));
+
+    const char *asmCode =
+        "lbl1_bgn:\n"
+        "10, 20, 30\n"
+        "11, 21, 31\n"
+        "12, 22, 32\n"
+        "lbl1_end:\n"
+        "FOR (1, 6) UOP (lbl1_bgn, lbl1_end)\n"
+        "GEMM.RST(ACC[0:3])\n";
+
+    int numInsn = 0;
+    int numUop = 0;
+
+    VTAErr status;
+
+    status = vtaAssemble(
+        asmCode,
+        insnBuffer,
+        8,
+        &numInsn,
+        uopBuffer,
+        8,
+        &numUop
+    );
+
+    if (status != VTA_OK) {
+        printf(
+            " FAIL! vtaAssemble returned status [%d].\n",
+            status
+        );
+        vtaErrorPrint(status, -1);
+        return 1;
+    }
+
+    if (numInsn != 1) {
+        printf(
+            " FAIL! Expected 1 instruction, got %d.\n",
+            numInsn
+        );
+        error++;
+    }
+
+    if (numUop != 3) {
+        printf(
+            " FAIL! Expected 3 UOPs, got %d.\n",
+            numUop
+        );
+        error++;
+    }
+
+    VTAGemInsn *insn;
+    insn = (VTAGemInsn *)&insnBuffer[0];
+
+    if (insn->opcode != VTA_OPCODE_GEMM) {
+        printf(
+            " FAIL! Wrong opcode: got %u.\n",
+            (unsigned)insn->opcode
+        );
+        error++;
+    }
+
+    if (insn->reset_reg != 1) {
+        printf(
+            " FAIL! Expected reset_reg = 1, got %u.\n",
+            (unsigned)insn->reset_reg
+        );
+        error++;
+    }
+
+    if (insn->uop_bgn != 0) {
+        printf(
+            " FAIL! Expected uop_bgn = 0, got %u.\n",
+            (unsigned)insn->uop_bgn
+        );
+        error++;
+    }
+
+    if (insn->uop_end != 3) {
+        printf(
+            " FAIL! Expected uop_end = 3, got %u.\n",
+            (unsigned)insn->uop_end
+        );
+        error++;
+    }
+
+    if (insn->iter_out != 1) {
+        printf(
+            " FAIL! Expected iter_out = 1, got %u.\n",
+            (unsigned)insn->iter_out
+        );
+        error++;
+    }
+
+    if (insn->iter_in != 6) {
+        printf(
+            " FAIL! Expected iter_in = 6, got %u.\n",
+            (unsigned)insn->iter_in
+        );
+        error++;
+    }
+
+    if (error == 0)
+        printf(" PASS! GEMM.RST fields encoded correctly.\n");
+
+    return error;
+}
+
+
 void executeTestsAssembler(int *error) {
     *error += test_uopDetection();
     *error += test_invalidUop();
@@ -570,6 +887,9 @@ void executeTestsAssembler(int *error) {
     *error += test_loadEncoding();
     *error += test_uopEncoding();
     *error += test_storeEncoding();
+    *error += test_gemmEnconding();
+    *error += test_gemmLabelResolution();
+    *error += test_gemmRstEncoding();
 }
 
 
