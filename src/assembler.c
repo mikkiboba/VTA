@@ -82,6 +82,9 @@ typedef struct {
     VTAAsm kind;
     VTADependencies deps;
 
+    char uopBgnLabel[TEXT_SIZE];
+    char uopEndLabel[TEXT_SIZE];
+
     union {
         VTAMemInsn mem;
         VTAGemInsn gemm;
@@ -174,6 +177,10 @@ static void     skipWhiteSpaceAndComments(VTAParserContext *ctx);
 static VTAToken getNextToken(VTAParserContext *ctx);
 static VTAToken peekNextToken(const VTAParserContext *ctx);
 static VTAErr   parseLoad(VTAParserContext *ctx, VTAParsedInsn *parsedInsn);
+static VTAErr   parseStore(VTAParserContext *ctx, VTAParsedInsn *parsedInsn);
+static VTAErr   parseGemm(VTAParserContext *ctx, VTAParsedInsn *parsedInsn);
+static VTAErr   parseGemmFor(VTAParserContext *ctx, VTAParsedInsn *parsedInsn);
+static VTAErr   parseGemmRst(VTAParserContext *ctx, VTAParsedInsn *parsedInsn);
 static VTAErr   parseInstruction(VTAParserContext *ctx, const VTAToken *token, VTAParsedInsn *parsedInsn);
 
 
@@ -497,6 +504,44 @@ static VTAErr parseInstructionEnd(VTAParserContext *ctx) {
 }
 
 
+static VTAErr parseRange(VTAParserContext *ctx, uint32_t *start, uint32_t *end) {
+    VTAErr status;
+    status = expectToken(ctx, TOKEN_PUNCTUATION, "[");
+    if (status != VTA_OK)
+        return status;
+
+    VTAToken token;
+    token = getNextToken(ctx);
+
+    if (token.type != TOKEN_INT)
+        return VTA_ERR_SYNTAX;
+    if (token.value < 0)
+        return VTA_ERR_OUT_OF_RANGE;
+    
+    *start = (uint32_t)token.value;
+
+    status = expectToken(ctx, TOKEN_PUNCTUATION, ":");
+    if (status != VTA_OK)
+        return status;
+
+    token = getNextToken(ctx);
+
+    if (token.type != TOKEN_INT)
+        return VTA_ERR_SYNTAX;
+    if (token.value < 0)
+        return VTA_ERR_OUT_OF_RANGE;
+    
+    *end = (uint32_t)token.value;
+
+    if (*start > *end) 
+        return VTA_ERR_OUT_OF_RANGE;
+    
+    status = expectToken(ctx, TOKEN_PUNCTUATION, "]");
+    
+    return status;
+}
+
+
 static VTAErr parseLoad(VTAParserContext *ctx, VTAParsedInsn *parsedInsn) {
     memset(parsedInsn, 0, sizeof(*parsedInsn));
 
@@ -674,7 +719,7 @@ static VTAErr parseStore(VTAParserContext *ctx, VTAParsedInsn *parsedInsn) {
 
     if (token.type != TOKEN_INT)
         return VTA_ERR_SYNTAX;
-    if (token.type <= 0)
+    if (token.value <= 0)
         return VTA_ERR_OUT_OF_RANGE;
 
     parsedInsn->data.mem.y_size = (uint32_t)token.value;
@@ -687,7 +732,7 @@ static VTAErr parseStore(VTAParserContext *ctx, VTAParsedInsn *parsedInsn) {
     
     if (token.type != TOKEN_INT)
         return VTA_ERR_SYNTAX;
-    if (token.type <= 0)
+    if (token.value <= 0)
         return VTA_ERR_OUT_OF_RANGE;
     
     parsedInsn->data.mem.x_size = (uint32_t)token.value;
@@ -742,6 +787,227 @@ static VTAErr parseStore(VTAParserContext *ctx, VTAParsedInsn *parsedInsn) {
 }
 
 
+static VTAErr parseGemm(VTAParserContext *ctx, VTAParsedInsn *parsedInsn) {
+    VTAErr status;
+    status = expectToken(ctx, TOKEN_PUNCTUATION, "(");
+    if (status != VTA_OK)
+        return status;
+
+    status = expectToken(ctx, TOKEN_IDENTIFIER, "ACC");
+    if (status != VTA_OK)
+        return status;
+
+    uint32_t accBgn, accEnd;
+    status = parseRange(ctx, &accBgn, &accEnd);
+    if (status != VTA_OK)
+        return status;
+
+    status = expectToken(ctx, TOKEN_PUNCTUATION, ",");
+    if (status != VTA_OK)
+        return status;
+    
+    status = expectToken(ctx, TOKEN_IDENTIFIER, "INP");
+    if (status != VTA_OK)
+        return status;
+
+    uint32_t inpBgn, inpEnd;
+    status = parseRange(ctx, &inpBgn, &inpEnd);
+    if (status != VTA_OK)
+        return status;
+
+    status = expectToken(ctx, TOKEN_PUNCTUATION, ",");
+    if (status != VTA_OK)
+        return status;
+
+    status = expectToken(ctx, TOKEN_IDENTIFIER, "WGT");
+    if (status != VTA_OK)
+        return status;
+
+    uint32_t wgtBgn, wgtEnd;
+    status = parseRange(ctx, &wgtBgn, &wgtEnd);
+    if (status != VTA_OK)
+        return status;
+
+    // * the 3 ranges must be the same UOP range
+    if (
+        accBgn != inpBgn ||
+        accBgn != wgtBgn ||
+        accEnd != inpEnd ||
+        accEnd != wgtEnd
+    ) {
+        return VTA_ERR_SYNTAX;
+    }
+
+    status = expectToken(ctx, TOKEN_PUNCTUATION, ")");
+    if (status != VTA_OK)
+        return status;
+
+    status = parseInstructionEnd(ctx);
+    if (status != VTA_OK)
+        return status;
+
+    parsedInsn->data.gemm.uop_bgn = accBgn;
+    parsedInsn->data.gemm.uop_end = accEnd;
+
+    return VTA_OK;
+}
+
+
+static VTAErr parseGemmRst(VTAParserContext *ctx, VTAParsedInsn *parsedInsn) {
+    VTAErr status;
+    status = expectToken(ctx, TOKEN_PUNCTUATION, "(");
+    if (status != VTA_OK)
+        return status;
+
+    status = expectToken(ctx, TOKEN_IDENTIFIER, "ACC");
+    if (status != VTA_OK)
+        return status;
+
+    uint32_t uopBgn, uopEnd;
+    status = parseRange(ctx, &uopBgn, &uopEnd);
+    if (status != VTA_OK)
+        return status;
+
+    status = expectToken(ctx, TOKEN_PUNCTUATION, ")");
+    if (status != VTA_OK)
+        return status;
+
+    status = parseInstructionEnd(ctx);
+    if (status != VTA_OK)
+        return status;
+
+    parsedInsn->data.gemm.uop_bgn = uopBgn;
+    parsedInsn->data.gemm.uop_end = uopEnd;
+
+    return VTA_OK;
+}
+
+
+static VTAErr parseGemmFor(VTAParserContext *ctx, VTAParsedInsn *parsedInsn) {
+    VTAErr status;
+    status = expectToken(ctx, TOKEN_PUNCTUATION, "(");
+    if (status != VTA_OK)
+        return status;
+
+    VTAToken token;
+    token = getNextToken(ctx);
+    if (token.type != TOKEN_INT)
+        return VTA_ERR_SYNTAX;
+    if (token.value <= 0) 
+        return VTA_ERR_OUT_OF_RANGE;
+    
+    parsedInsn->data.gemm.iter_out = (uint32_t)token.value;
+
+    status = expectToken(ctx, TOKEN_PUNCTUATION, ",");
+    if (status != VTA_OK)
+        return status;
+    
+    token = getNextToken(ctx);
+    if (token.type != TOKEN_INT)
+        return VTA_ERR_SYNTAX;
+    if (token.value <= 0)
+        return VTA_ERR_OUT_OF_RANGE;
+
+    parsedInsn->data.gemm.iter_in = (uint32_t)token.value;
+
+    status = expectToken(ctx, TOKEN_PUNCTUATION, ")");
+    if (status != VTA_OK)
+        return status;
+
+    status = expectToken(ctx, TOKEN_IDENTIFIER, "UOP");
+    if (status != VTA_OK)
+        return status;
+
+    status = expectToken(ctx, TOKEN_PUNCTUATION, "(");
+    if (status != VTA_OK)
+        return status;
+
+    token = getNextToken(ctx);
+    if (token.type != TOKEN_IDENTIFIER)
+        return VTA_ERR_SYNTAX;
+    
+    strncpy(parsedInsn->uopBgnLabel, token.text, TEXT_SIZE - 1);
+    parsedInsn->uopBgnLabel[TEXT_SIZE-1] = '\0';
+
+    status = expectToken(ctx, TOKEN_PUNCTUATION, ",");
+    if (status != VTA_OK)
+        return status;
+
+    token = getNextToken(ctx);
+    if (token.type != TOKEN_IDENTIFIER)
+        return VTA_ERR_SYNTAX;
+    
+    strncpy(parsedInsn->uopEndLabel, token.text, TEXT_SIZE - 1);
+    parsedInsn->uopEndLabel[TEXT_SIZE-1] = '\0';
+
+    status = expectToken(ctx, TOKEN_PUNCTUATION, ")");
+    if (status != VTA_OK)
+        return status;
+
+    return parseInstructionEnd(ctx);
+}
+
+
+static VTAErr parseGemmInstruction(VTAParserContext *ctx, VTAParsedInsn *parsedInsn) {
+    memset(parsedInsn, 0, sizeof(*parsedInsn));
+
+    parsedInsn->kind                = ASM_GEMM;
+    parsedInsn->data.gemm.opcode    = VTA_OPCODE_GEMM;
+
+    VTAErr status;
+    status = parseGemmFor(ctx, parsedInsn);
+    if (status != VTA_OK)
+        return status;
+
+    VTAToken token;
+    token = getNextToken(ctx);
+    if (strcmp(token.text, "GEMM") == 0) {
+        parsedInsn->kind                = ASM_GEMM;
+        parsedInsn->data.gemm.opcode    = VTA_OPCODE_GEMM;
+        parsedInsn->data.gemm.reset_reg = 0;
+
+        return parseGemm(ctx, parsedInsn);
+    }
+
+    if (strcmp(token.text, "GEMM.RST") == 0) {
+        parsedInsn->kind                = ASM_GEMM_RST;
+        parsedInsn->data.gemm.opcode    = VTA_OPCODE_GEMM;
+        parsedInsn->data.gemm.reset_reg = 1;
+
+        return parseGemm(ctx, parsedInsn);
+    }
+
+    return VTA_ERR_SYNTAX;
+}
+
+
+static VTAErr resolveGemmLabels(const VTALT *labelTable, VTAParsedInsn *parsedInsn) {
+    int uopBgn, uopEnd;
+
+    uopBgn = LT_find(labelTable, parsedInsn->uopBgnLabel);
+    if (uopBgn < 0) 
+        return VTA_ERR_LABEL_NOT_FOUND;
+
+    uopEnd = LT_find(labelTable, parsedInsn->uopEndLabel);
+    if (uopEnd < 0)
+        return VTA_ERR_LABEL_NOT_FOUND;
+
+    if (uopBgn > uopEnd)
+        return VTA_ERR_OUT_OF_RANGE;
+
+    if (
+        parsedInsn->data.gemm.uop_bgn != (uint32_t)uopBgn ||
+        parsedInsn->data.gemm.uop_end != (uint32_t)uopEnd
+    )
+        return VTA_ERR_SYNTAX;
+
+    parsedInsn->data.gemm.uop_bgn = (uint32_t)uopBgn;
+    parsedInsn->data.gemm.uop_end = (uint32_t)uopEnd;
+
+    return VTA_OK;
+}
+
+
 /*!
  * \todo 
 */
@@ -771,6 +1037,9 @@ static VTAErr parseInstruction(VTAParserContext *ctx, const VTAToken *token, VTA
     if (strcmp(token->text, "STORE") == 0 || strcmp(token->text, "STOR") == 0)
         return parseStore(ctx, parsedInsn);
 
+    if (strcmp(token->text, "FOR") == 0) 
+        return parseGemmInstruction(ctx, parsedInsn);
+
     return VTA_ERR_UNKNOWN_MNEMONIC;
 }
 
@@ -793,6 +1062,13 @@ static VTAErr emitInstruction(
             memcpy(&insnBuffer[*numInsn], &parsedInsn->data.mem, sizeof(VTAMemInsn));
             (*numInsn)++;
             
+            return VTA_OK;
+
+        case ASM_GEMM:
+        case ASM_GEMM_RST:
+            memcpy(&insnBuffer[*numInsn], &parsedInsn->data.gemm, sizeof(VTAGemInsn));
+            (*numInsn)++;
+
             return VTA_OK;
 
         default:
@@ -886,7 +1162,8 @@ static VTAErr makeLT(
                 strcmp(token.text, "NOOP")      == 0 ||
                 strcmp(token.text, "LOAD")      == 0 ||
                 strcmp(token.text, "STORE")     == 0 ||
-                strcmp(token.text, "STOR")      == 0
+                strcmp(token.text, "STOR")      == 0 ||
+                strcmp(token.text, "FOR")       == 0 
             ) {
                 VTAParsedInsn parsedInsn;
                 memset(&parsedInsn, 0, sizeof(parsedInsn));
@@ -910,9 +1187,8 @@ static VTAErr makeLT(
             }
 
             if (
-                strcmp(token.text, "GEMM")   == 0 || strcmp(token.text, "GEMM.RST") == 0 ||
-                strcmp(token.text, "ALU")    == 0 || strncmp(token.text, "ALU.", 4) == 0 //||
-                //strcmp(token.text, "FINISH") == 0 || strcmp(token.text, "NOOP")     == 0 
+                strcmp(token.text, "ALU")       == 0 || 
+                strncmp(token.text, "ALU.", 4)  == 0 
             ) {
                 IC++;
                 if (IC > maxInsn) {
@@ -953,7 +1229,8 @@ static VTAErr encodeInstructions(
     int             maxInsn,
     int             *numInsn,
     VTAUop          *uopBuffer,
-    int             maxUop
+    int             maxUop,
+    const VTALT     *labelTable
 ) {
     VTAParserContext ctx;
     ctx.cursor  = asmCode;
@@ -1007,6 +1284,7 @@ static VTAErr encodeInstructions(
             strcmp(token.text, "LOAD")      == 0 ||
             strcmp(token.text, "STORE")     == 0 ||
             strcmp(token.text, "STOR")      == 0 ||
+            strcmp(token.text, "FOR")       == 0 ||
             strcmp(token.text, "NOOP")      == 0 ||
             strcmp(token.text, "FINISH")    == 0
         ) {
@@ -1019,6 +1297,12 @@ static VTAErr encodeInstructions(
             if (status != VTA_OK) 
                 return status;
 
+            if (parsedInsn.kind == ASM_GEMM || parsedInsn.kind == ASM_GEMM_RST) {
+                status = resolveGemmLabels(labelTable, &parsedInsn);
+                if (status != VTA_OK)
+                    return status;
+            }
+        
             status = emitInstruction(&parsedInsn, insnBuffer, maxInsn, numInsn);
             
             if (status != VTA_OK)
@@ -1029,9 +1313,7 @@ static VTAErr encodeInstructions(
 
         if (
             strcmp(token.text, "ALU")       == 0 ||
-            strcmp(token.text, "ALU.")      == 0 ||
-            strcmp(token.text, "GEMM")      == 0 ||
-            strcmp(token.text, "GEMM.RST")  == 0   
+            strcmp(token.text, "ALU.")      == 0 
         ) {
             VTAErr status;
             status = skipToEOL(&ctx);
@@ -1087,7 +1369,7 @@ VTAErr vtaAssemble(
     
     // *: Step 2: binary encoding
     VTAErr statusEncode;
-    statusEncode = encodeInstructions(asmCode, insnBuffer, maxInsn, numInsn, uopBuffer, maxUop); // * da rivedere
+    statusEncode = encodeInstructions(asmCode, insnBuffer, maxInsn, numInsn, uopBuffer, maxUop, &labelTable); // * da rivedere
     
     if (statusEncode != VTA_OK)
         return statusEncode;
