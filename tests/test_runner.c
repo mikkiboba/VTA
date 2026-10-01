@@ -652,12 +652,13 @@ static int test_gemmLabelResolution(void)
     int error = 0;
 
     VTAGenericInsn insnBuffer[8];
-    VTAUop uopBuffer[8];
-
     memset(insnBuffer, 0, sizeof(insnBuffer));
+
+    VTAUop uopBuffer[8];
     memset(uopBuffer, 0, sizeof(uopBuffer));
 
-    const char *asmCode =
+    const char *asmCode;
+    asmCode =
         "lbl1_bgn:\n"
         "10, 20, 30\n"
         "11, 21, 31\n"
@@ -666,43 +667,27 @@ static int test_gemmLabelResolution(void)
         "FOR (2, 4) UOP (lbl1_bgn, lbl1_end)\n"
         "GEMM(ACC[0:3], INP[0:3], WGT[0:3])\n";
 
-    int numInsn = 0;
-    int numUop = 0;
+    int numInsn, numUop;
+    numInsn = 0;
+    numUop  = 0;
 
     VTAErr status;
 
-    status = vtaAssemble(
-        asmCode,
-        insnBuffer,
-        8,
-        &numInsn,
-        uopBuffer,
-        8,
-        &numUop
-    );
+    status = vtaAssemble(asmCode, insnBuffer, 8, &numInsn, uopBuffer, 8, &numUop);
 
     if (status != VTA_OK) {
-        printf(
-            " FAIL! vtaAssemble returned status [%d].\n",
-            status
-        );
+        printf(" FAIL! vtaAssemble returned status [%d].\n", status);
         vtaErrorPrint(status, -1);
         return 1;
     }
 
     if (numInsn != 1) {
-        printf(
-            " FAIL! Expected 1 instruction, got %d.\n",
-            numInsn
-        );
+        printf(" FAIL! Expected 1 instruction, got %d.\n", numInsn);
         error++;
     }
 
     if (numUop != 3) {
-        printf(
-            " FAIL! Expected 3 UOPs, got %d.\n",
-            numUop
-        );
+        printf(" FAIL! Expected 3 UOPs, got %d.\n", numUop);
         error++;
     }
 
@@ -710,42 +695,27 @@ static int test_gemmLabelResolution(void)
     insn = (VTAGemInsn *)&insnBuffer[0];
 
     if (insn->opcode != VTA_OPCODE_GEMM) {
-        printf(
-            " FAIL! Wrong opcode: got %u.\n",
-            (unsigned)insn->opcode
-        );
+        printf(" FAIL! Wrong opcode: got %u.\n", (unsigned)insn->opcode);
         error++;
     }
 
     if (insn->uop_bgn != 0) {
-        printf(
-            " FAIL! Expected uop_bgn = 0, got %u.\n",
-            (unsigned)insn->uop_bgn
-        );
+        printf(" FAIL! Expected uop_bgn = 0, got %u.\n", (unsigned)insn->uop_bgn);
         error++;
     }
 
     if (insn->uop_end != 3) {
-        printf(
-            " FAIL! Expected uop_end = 3, got %u.\n",
-            (unsigned)insn->uop_end
-        );
+        printf(" FAIL! Expected uop_end = 3, got %u.\n", (unsigned)insn->uop_end);
         error++;
     }
 
     if (insn->iter_out != 2) {
-        printf(
-            " FAIL! Expected iter_out = 2, got %u.\n",
-            (unsigned)insn->iter_out
-        );
+        printf(" FAIL! Expected iter_out = 2, got %u.\n", (unsigned)insn->iter_out);
         error++;
     }
 
     if (insn->iter_in != 4) {
-        printf(
-            " FAIL! Expected iter_in = 4, got %u.\n",
-            (unsigned)insn->iter_in
-        );
+        printf(" FAIL! Expected iter_in = 4, got %u.\n", (unsigned)insn->iter_in);
         error++;
     }
 
@@ -760,15 +730,17 @@ static int test_gemmRstEncoding(void)
 {
     printHeaderA("14. Check GEMM.RST binary encoding.");
 
-    int error = 0;
+    int error;
+    error = 0;
 
     VTAGenericInsn insnBuffer[8];
-    VTAUop uopBuffer[8];
-
     memset(insnBuffer, 0, sizeof(insnBuffer));
+
+    VTAUop uopBuffer[8];
     memset(uopBuffer, 0, sizeof(uopBuffer));
 
-    const char *asmCode =
+    const char *asmCode;
+    asmCode =
         "lbl1_bgn:\n"
         "10, 20, 30\n"
         "11, 21, 31\n"
@@ -777,43 +749,27 @@ static int test_gemmRstEncoding(void)
         "FOR (1, 6) UOP (lbl1_bgn, lbl1_end)\n"
         "GEMM.RST(ACC[0:3])\n";
 
-    int numInsn = 0;
-    int numUop = 0;
+    int numInsn, numUop;
+    numInsn = 0;
+    numUop  = 0;
 
     VTAErr status;
 
-    status = vtaAssemble(
-        asmCode,
-        insnBuffer,
-        8,
-        &numInsn,
-        uopBuffer,
-        8,
-        &numUop
-    );
+    status = vtaAssemble(asmCode, insnBuffer, 8, &numInsn, uopBuffer, 8, &numUop);
 
     if (status != VTA_OK) {
-        printf(
-            " FAIL! vtaAssemble returned status [%d].\n",
-            status
-        );
+        printf(" FAIL! vtaAssemble returned status [%d].\n", status);
         vtaErrorPrint(status, -1);
         return 1;
     }
 
     if (numInsn != 1) {
-        printf(
-            " FAIL! Expected 1 instruction, got %d.\n",
-            numInsn
-        );
+        printf(" FAIL! Expected 1 instruction, got %d.\n", numInsn);
         error++;
     }
 
     if (numUop != 3) {
-        printf(
-            " FAIL! Expected 3 UOPs, got %d.\n",
-            numUop
-        );
+        printf(" FAIL! Expected 3 UOPs, got %d.\n", numUop);
         error++;
     }
 
@@ -821,50 +777,32 @@ static int test_gemmRstEncoding(void)
     insn = (VTAGemInsn *)&insnBuffer[0];
 
     if (insn->opcode != VTA_OPCODE_GEMM) {
-        printf(
-            " FAIL! Wrong opcode: got %u.\n",
-            (unsigned)insn->opcode
-        );
+        printf(" FAIL! Wrong opcode: got %u.\n", (unsigned)insn->opcode);
         error++;
     }
 
     if (insn->reset_reg != 1) {
-        printf(
-            " FAIL! Expected reset_reg = 1, got %u.\n",
-            (unsigned)insn->reset_reg
-        );
+        printf(" FAIL! Expected reset_reg = 1, got %u.\n", (unsigned)insn->reset_reg);
         error++;
     }
 
     if (insn->uop_bgn != 0) {
-        printf(
-            " FAIL! Expected uop_bgn = 0, got %u.\n",
-            (unsigned)insn->uop_bgn
-        );
+        printf(" FAIL! Expected uop_bgn = 0, got %u.\n", (unsigned)insn->uop_bgn);
         error++;
     }
 
     if (insn->uop_end != 3) {
-        printf(
-            " FAIL! Expected uop_end = 3, got %u.\n",
-            (unsigned)insn->uop_end
-        );
+        printf(" FAIL! Expected uop_end = 3, got %u.\n", (unsigned)insn->uop_end);
         error++;
     }
 
     if (insn->iter_out != 1) {
-        printf(
-            " FAIL! Expected iter_out = 1, got %u.\n",
-            (unsigned)insn->iter_out
-        );
+        printf(" FAIL! Expected iter_out = 1, got %u.\n", (unsigned)insn->iter_out);
         error++;
     }
 
     if (insn->iter_in != 6) {
-        printf(
-            " FAIL! Expected iter_in = 6, got %u.\n",
-            (unsigned)insn->iter_in
-        );
+        printf(" FAIL! Expected iter_in = 6, got %u.\n", (unsigned)insn->iter_in);
         error++;
     }
 
