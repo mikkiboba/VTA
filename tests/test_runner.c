@@ -813,6 +813,227 @@ static int test_gemmRstEncoding(void)
 }
 
 
+static int test_aluEncoding(void)
+{
+    printHeaderA("15. Check ALU binary encoding.");
+
+    int error = 0;
+
+    const char *opNames[] = {
+        "ALU.MIN",
+        "ALU.MAX",
+        "ALU.ADD",
+        "ALU.SHR"
+    };
+
+    uint32_t expectedOpcodes[] = {
+        VTA_ALU_OPCODE_MIN,
+        VTA_ALU_OPCODE_MAX,
+        VTA_ALU_OPCODE_ADD,
+        VTA_ALU_OPCODE_SHR
+    };
+
+    for (int i = 0; i < 4; i++) {
+        VTAGenericInsn insnBuffer[8];
+        VTAUop uopBuffer[8];
+        memset(insnBuffer, 0, sizeof(insnBuffer));
+        memset(uopBuffer, 0, sizeof(uopBuffer));
+
+        char asmCode[256];
+        snprintf(
+            asmCode,
+            sizeof(asmCode),
+            "lbl1_bgn:\n"
+            "10, 20, 30\n"
+            "11, 21, 31\n"
+            "12, 22, 32\n"
+            "lbl1_end:\n"
+            "FOR (3, 5) UOP (lbl1_bgn, lbl1_end)\n"
+            "%s(DST[0:3], -7)\n",
+            opNames[i]
+        );
+
+        int numInsn = 0;
+        int numUop = 0;
+
+        VTAErr status = vtaAssemble(
+            asmCode,
+            insnBuffer,
+            8,
+            &numInsn,
+            uopBuffer,
+            8,
+            &numUop
+        );
+
+        if (status != VTA_OK) {
+            printf(" FAIL! %s returned status [%d].\n", opNames[i], status);
+            vtaErrorPrint(status, -1);
+            error++;
+            continue;
+        }
+
+        VTAAluInsn *insn = (VTAAluInsn *)&insnBuffer[0];
+
+        if (numInsn != 1) {
+            printf(" FAIL! %s: expected 1 instruction, got %d.\n", opNames[i], numInsn);
+            error++;
+        }
+
+        if (numUop != 3) {
+            printf(" FAIL! %s: expected 3 UOPs, got %d.\n", opNames[i], numUop);
+            error++;
+        }
+
+        if (insn->opcode != VTA_OPCODE_ALU) {
+            printf(" FAIL! %s: wrong opcode: got %u.\n", opNames[i], (unsigned)insn->opcode);
+            error++;
+        }
+
+        if (insn->alu_opcode != expectedOpcodes[i]) {
+            printf(
+                " FAIL! %s: wrong ALU opcode: got %u, expected %u.\n",
+                opNames[i],
+                (unsigned)insn->alu_opcode,
+                (unsigned)expectedOpcodes[i]
+            );
+            error++;
+        }
+
+        if (insn->uop_bgn != 0 || insn->uop_end != 3) {
+            printf(
+                " FAIL! %s: wrong UOP range [%u:%u].\n",
+                opNames[i],
+                (unsigned)insn->uop_bgn,
+                (unsigned)insn->uop_end
+            );
+            error++;
+        }
+
+        if (insn->iter_out != 3 || insn->iter_in != 5) {
+            printf(
+                " FAIL! %s: wrong iterators (%u, %u).\n",
+                opNames[i],
+                (unsigned)insn->iter_out,
+                (unsigned)insn->iter_in
+            );
+            error++;
+        }
+
+        if (insn->reset_reg != 0) {
+            printf(" FAIL! %s: reset_reg should be 0, got %u.\n", opNames[i], (unsigned)insn->reset_reg);
+            error++;
+        }
+
+        if (insn->use_imm != 1) {
+            printf(" FAIL! %s: expected immediate mode.\n", opNames[i]);
+            error++;
+        }
+
+        if (insn->imm != -7) {
+            printf(" FAIL! %s: wrong immediate: got %d.\n", opNames[i], (int)insn->imm);
+            error++;
+        }
+    }
+
+    if (error == 0)
+        printf(" PASS! All ALU opcodes encoded correctly.\n");
+
+    return error;
+}
+
+
+static int test_aluSrcEncoding(void)
+{
+    printHeaderA("16. Check ALU SRC encoding.");
+
+    int error = 0;
+
+    VTAGenericInsn insnBuffer[8];
+    VTAUop uopBuffer[8];
+    memset(insnBuffer, 0, sizeof(insnBuffer));
+    memset(uopBuffer, 0, sizeof(uopBuffer));
+
+    const char *asmCode =
+        "lbl1_bgn:\n"
+        "10, 20, 30\n"
+        "11, 21, 31\n"
+        "12, 22, 32\n"
+        "lbl1_end:\n"
+        "FOR (2, 4) UOP (lbl1_bgn, lbl1_end)\n"
+        "ALU.ADD(DST[0:3], SRC[0:3])\n";
+
+    int numInsn = 0;
+    int numUop = 0;
+
+    VTAErr status = vtaAssemble(
+        asmCode,
+        insnBuffer,
+        8,
+        &numInsn,
+        uopBuffer,
+        8,
+        &numUop
+    );
+
+    if (status != VTA_OK) {
+        printf(" FAIL! ALU.ADD SRC returned status [%d].\n", status);
+        vtaErrorPrint(status, -1);
+        return 1;
+    }
+
+    VTAAluInsn *insn = (VTAAluInsn *)&insnBuffer[0];
+
+    if (numInsn != 1) {
+        printf(" FAIL! Expected 1 instruction, got %d.\n", numInsn);
+        error++;
+    }
+
+    if (numUop != 3) {
+        printf(" FAIL! Expected 3 UOPs, got %d.\n", numUop);
+        error++;
+    }
+
+    if (insn->opcode != VTA_OPCODE_ALU) {
+        printf(" FAIL! Wrong opcode: got %u.\n", (unsigned)insn->opcode);
+        error++;
+    }
+
+    if (insn->alu_opcode != VTA_ALU_OPCODE_ADD) {
+        printf(" FAIL! Wrong ALU opcode: got %u.\n", (unsigned)insn->alu_opcode);
+        error++;
+    }
+
+    if (insn->uop_bgn != 0 || insn->uop_end != 3) {
+        printf(
+            " FAIL! Wrong UOP range [%u:%u].\n",
+            (unsigned)insn->uop_bgn,
+            (unsigned)insn->uop_end
+        );
+        error++;
+    }
+
+    if (insn->iter_out != 2 || insn->iter_in != 4) {
+        printf(
+            " FAIL! Wrong iterators (%u, %u).\n",
+            (unsigned)insn->iter_out,
+            (unsigned)insn->iter_in
+        );
+        error++;
+    }
+
+    if (insn->use_imm != 0) {
+        printf(" FAIL! Expected SRC mode, but use_imm is %u.\n", (unsigned)insn->use_imm);
+        error++;
+    }
+
+    if (error == 0)
+        printf(" PASS! ALU SRC fields encoded correctly.\n");
+
+    return error;
+}
+
+
 void executeTestsAssembler(int *error) {
     *error += test_uopDetection();
     *error += test_invalidUop();
@@ -828,6 +1049,8 @@ void executeTestsAssembler(int *error) {
     *error += test_gemmEnconding();
     *error += test_gemmLabelResolution();
     *error += test_gemmRstEncoding();
+    *error += test_aluEncoding();
+    *error += test_aluSrcEncoding();
 }
 
 
