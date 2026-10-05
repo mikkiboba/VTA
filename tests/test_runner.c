@@ -1034,6 +1034,274 @@ static int test_aluSrcEncoding(void)
 }
 
 
+static int test_dependencyEncoding(void)
+{
+    printHeaderA("17. Check POP/PUSH dependency encoding.");
+
+    int error = 0;
+
+    VTAGenericInsn insnBuffer[8];
+    VTAUop uopBuffer[8];
+
+    /*
+     * 17.1 LOAD
+     *
+     * POP  EX->LD  -> pop_prev_dep
+     * PUSH LD->EX  -> push_prev_dep
+     */
+    memset(insnBuffer, 0, sizeof(insnBuffer));
+    memset(uopBuffer, 0, sizeof(uopBuffer));
+
+    const char *loadCode =
+        "POP (EX->LD)\n"
+        "LOAD(INP[4], MEM[100, 2, 8, 16])\n"
+        "PUSH (LD->EX)\n";
+
+    int numInsn = 0;
+    int numUop = 0;
+
+    VTAErr status;
+    status = vtaAssemble(
+        loadCode,
+        insnBuffer,
+        8,
+        &numInsn,
+        uopBuffer,
+        8,
+        &numUop
+    );
+
+    if (status != VTA_OK) {
+        printf(" FAIL! LOAD dependency encoding returned %d.\n", status);
+        vtaErrorPrint(status, -1);
+        return 1;
+    }
+
+    VTAMemInsn *load;
+    load = (VTAMemInsn *)&insnBuffer[0];
+
+    if (load->pop_prev_dep != 1) {
+        printf(" FAIL! LOAD pop_prev_dep expected 1, got %u.\n",
+               (unsigned)load->pop_prev_dep);
+        error++;
+    }
+
+    if (load->pop_next_dep != 0) {
+        printf(" FAIL! LOAD pop_next_dep expected 0, got %u.\n",
+               (unsigned)load->pop_next_dep);
+        error++;
+    }
+
+    if (load->push_prev_dep != 1) {
+        printf(" FAIL! LOAD push_prev_dep expected 1, got %u.\n",
+               (unsigned)load->push_prev_dep);
+        error++;
+    }
+
+    if (load->push_next_dep != 0) {
+        printf(" FAIL! LOAD push_next_dep expected 0, got %u.\n",
+               (unsigned)load->push_next_dep);
+        error++;
+    }
+
+    /*
+     * 17.2 STORE
+     *
+     * POP  EX->ST  -> pop_prev_dep
+     * PUSH ST->EX  -> push_prev_dep
+     */
+    memset(insnBuffer, 0, sizeof(insnBuffer));
+    memset(uopBuffer, 0, sizeof(uopBuffer));
+
+    const char *storeCode =
+        "POP (EX->ST)\n"
+        "STORE(MEM[200, 2, 8, 16], ACC[5])\n"
+        "PUSH (ST->EX)\n";
+
+    numInsn = 0;
+    numUop = 0;
+
+    status = vtaAssemble(
+        storeCode,
+        insnBuffer,
+        8,
+        &numInsn,
+        uopBuffer,
+        8,
+        &numUop
+    );
+
+    if (status != VTA_OK) {
+        printf(" FAIL! STORE dependency encoding returned %d.\n", status);
+        vtaErrorPrint(status, -1);
+        return 1;
+    }
+
+    VTAMemInsn *store;
+    store = (VTAMemInsn *)&insnBuffer[0];
+
+    if (store->pop_prev_dep != 1) {
+        printf(" FAIL! STORE pop_prev_dep expected 1, got %u.\n",
+               (unsigned)store->pop_prev_dep);
+        error++;
+    }
+
+    if (store->pop_next_dep != 0) {
+        printf(" FAIL! STORE pop_next_dep expected 0, got %u.\n",
+               (unsigned)store->pop_next_dep);
+        error++;
+    }
+
+    if (store->push_prev_dep != 1) {
+        printf(" FAIL! STORE push_prev_dep expected 1, got %u.\n",
+               (unsigned)store->push_prev_dep);
+        error++;
+    }
+
+    if (store->push_next_dep != 0) {
+        printf(" FAIL! STORE push_next_dep expected 0, got %u.\n",
+               (unsigned)store->push_next_dep);
+        error++;
+    }
+
+    /*
+     * 17.3 GEMM
+     *
+     * POP:
+     *   LD->EX -> pop_prev_dep
+     *   ST->EX -> pop_next_dep
+     *
+     * PUSH:
+     *   EX->LD -> push_prev_dep
+     *   EX->ST -> push_next_dep
+     */
+    memset(insnBuffer, 0, sizeof(insnBuffer));
+    memset(uopBuffer, 0, sizeof(uopBuffer));
+
+    const char *gemmCode =
+        "lbl_bgn:\n"
+        "10, 20, 30\n"
+        "11, 21, 31\n"
+        "12, 22, 32\n"
+        "lbl_end:\n"
+        "POP (LD->EX, ST->EX)\n"
+        "FOR (2, 4) UOP (lbl_bgn, lbl_end)\n"
+        "GEMM(ACC[0:3], INP[0:3], WGT[0:3])\n"
+        "PUSH (EX->LD, EX->ST)\n";
+
+    numInsn = 0;
+    numUop = 0;
+
+    status = vtaAssemble(
+        gemmCode,
+        insnBuffer,
+        8,
+        &numInsn,
+        uopBuffer,
+        8,
+        &numUop
+    );
+
+    if (status != VTA_OK) {
+        printf(" FAIL! GEMM dependency encoding returned %d.\n", status);
+        vtaErrorPrint(status, -1);
+        return 1;
+    }
+
+    VTAGemInsn *gemm;
+    gemm = (VTAGemInsn *)&insnBuffer[0];
+
+    if (gemm->pop_prev_dep != 1) {
+        printf(" FAIL! GEMM pop_prev_dep expected 1, got %u.\n",
+               (unsigned)gemm->pop_prev_dep);
+        error++;
+    }
+
+    if (gemm->pop_next_dep != 1) {
+        printf(" FAIL! GEMM pop_next_dep expected 1, got %u.\n",
+               (unsigned)gemm->pop_next_dep);
+        error++;
+    }
+
+    if (gemm->push_prev_dep != 1) {
+        printf(" FAIL! GEMM push_prev_dep expected 1, got %u.\n",
+               (unsigned)gemm->push_prev_dep);
+        error++;
+    }
+
+    if (gemm->push_next_dep != 1) {
+        printf(" FAIL! GEMM push_next_dep expected 1, got %u.\n",
+               (unsigned)gemm->push_next_dep);
+        error++;
+    }
+
+    memset(insnBuffer, 0, sizeof(insnBuffer));
+    memset(uopBuffer, 0, sizeof(uopBuffer));
+
+    const char *aluCode =
+        "lbl_bgn:\n"
+        "10, 20, 30\n"
+        "11, 21, 31\n"
+        "12, 22, 32\n"
+        "lbl_end:\n"
+        "POP (LD->EX, ST->EX)\n"
+        "FOR (2, 4) UOP (lbl_bgn, lbl_end)\n"
+        "ALU.ADD(DST[0:3], 7)\n"
+        "PUSH (EX->LD, EX->ST)\n";
+
+    numInsn = 0;
+    numUop = 0;
+
+    status = vtaAssemble(
+        aluCode,
+        insnBuffer,
+        8,
+        &numInsn,
+        uopBuffer,
+        8,
+        &numUop
+    );
+
+    if (status != VTA_OK) {
+        printf(" FAIL! ALU dependency encoding returned %d.\n", status);
+        vtaErrorPrint(status, -1);
+        return 1;
+    }
+
+    VTAAluInsn *alu;
+    alu = (VTAAluInsn *)&insnBuffer[0];
+
+    if (alu->pop_prev_dep != 1) {
+        printf(" FAIL! ALU pop_prev_dep expected 1, got %u.\n",
+               (unsigned)alu->pop_prev_dep);
+        error++;
+    }
+
+    if (alu->pop_next_dep != 1) {
+        printf(" FAIL! ALU pop_next_dep expected 1, got %u.\n",
+               (unsigned)alu->pop_next_dep);
+        error++;
+    }
+
+    if (alu->push_prev_dep != 1) {
+        printf(" FAIL! ALU push_prev_dep expected 1, got %u.\n",
+               (unsigned)alu->push_prev_dep);
+        error++;
+    }
+
+    if (alu->push_next_dep != 1) {
+        printf(" FAIL! ALU push_next_dep expected 1, got %u.\n",
+               (unsigned)alu->push_next_dep);
+        error++;
+    }
+
+    if (error == 0)
+        printf(" PASS! POP/PUSH dependencies encoded correctly.\n");
+
+    return error;
+}
+
+
 void executeTestsAssembler(int *error) {
     *error += test_uopDetection();
     *error += test_invalidUop();
@@ -1051,6 +1319,7 @@ void executeTestsAssembler(int *error) {
     *error += test_gemmRstEncoding();
     *error += test_aluEncoding();
     *error += test_aluSrcEncoding();
+    *error += test_dependencyEncoding();
 }
 
 
