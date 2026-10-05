@@ -80,6 +80,14 @@ typedef struct {
 
 
 typedef struct {
+    int ex_ld;
+    int ex_st;
+    int ld_ex;
+    int st_ex;
+} VTADependenciesTransition;
+
+
+typedef struct {
     VTAAsm kind;
     VTADependencies deps;
 
@@ -1354,6 +1362,168 @@ static VTAErr emitInstruction(
 }
 
 
+static VTAErr parseDependencyLine(
+    VTAParserContext            *ctx, 
+    const VTAToken              *firstToken, 
+    VTADependenciesTransition   *edges
+) {
+    memset(edges, 0, sizeof(*edges));
+
+    if (strcmp(firstToken->text, "POP") != 0 && strcmp(firstToken->text, "PUSH") != 0)
+        return VTA_ERR_SYNTAX;
+
+    VTAErr status;
+    status = expectToken(ctx, TOKEN_PUNCTUATION, "(");
+    if (status != VTA_OK)
+        return status;
+
+    while (1) {
+        char source[8], target[8];
+
+        VTAToken token;
+        token = getNextToken(ctx);
+        if (token.type != TOKEN_IDENTIFIER) 
+            return VTA_ERR_SYNTAX;
+        
+        strncpy(source, token.text, sizeof(source)-1);
+        source[sizeof(source) - 1] = '\0';
+
+        status = expectToken(ctx, TOKEN_PUNCTUATION, "->");
+        if (status != VTA_OK)
+            return VTA_ERR_SYNTAX;
+
+        token = getNextToken(ctx);
+        if (token.type != TOKEN_IDENTIFIER)
+            return VTA_ERR_SYNTAX;
+
+        strncpy(target, token.text, sizeof(target) - 1);
+        target[sizeof(target) - 1] = '\0';
+
+        if (strcmp(source, "EX") == 0 && strcmp(target, "LD") == 0) {
+            if (edges->ex_ld)
+                return VTA_ERR_SYNTAX;
+            edges->ex_ld = 1;
+        } else if (strcmp(source, "EX") == 0 && strcmp(target, "ST") == 0) {
+            if (edges->ex_st)
+                return VTA_ERR_SYNTAX;
+            edges->ex_st = 1;
+        } else if (strcmp(source, "LD") == 0 && strcmp(target, "EX") == 0) {
+            if (edges->ld_ex)
+                return VTA_ERR_SYNTAX;
+            edges->ld_ex = 1;
+        } else if (strcmp(source, "ST") == 0 && strcmp(target, "EX") == 0) {
+            if (edges->st_ex)
+                return VTA_ERR_SYNTAX;
+            edges->st_ex = 1;
+        } else {
+            return VTA_ERR_SYNTAX;
+        }
+
+        token = getNextToken(ctx);
+        if (token.type == TOKEN_PUNCTUATION && strcmp(token.text, ",") == 0)
+            continue;
+        
+        if (token.type == TOKEN_PUNCTUATION && strcmp(token.text, ")") == 0)
+            break;
+
+        return VTA_ERR_SYNTAX;
+    }   
+
+    return parseInstructionEnd(ctx);
+}
+
+
+static VTAErr applyDependencies(
+    VTAParsedInsn                   *parsedInsn,
+    const VTADependenciesTransition *popEdges,
+    const VTADependenciesTransition *pushEdges
+) {
+    memset(&parsedInsn->deps, 0, sizeof(parsedInsn->deps));
+
+    switch (parsedInsn->kind) {
+        case ASM_LOAD:
+            if (
+                popEdges->ex_st  ||
+                popEdges->ld_ex  ||
+                popEdges->st_ex  ||
+                pushEdges->ex_ld ||
+                pushEdges->ex_st ||
+                pushEdges->st_ex 
+            )
+                return VTA_ERR_SYNTAX;
+
+            parsedInsn->deps.pop_prev  = popEdges->ex_ld;
+            parsedInsn->deps.push_prev = pushEdges->ld_ex;
+
+            parsedInsn->data.mem.pop_prev_dep  = parsedInsn->deps.pop_prev;
+            parsedInsn->data.mem.push_prev_dep = parsedInsn->deps.push_prev;
+
+            break;
+
+        case ASM_STORE:
+            if (
+                popEdges->ex_ld  ||
+                popEdges->ld_ex  ||
+                popEdges->st_ex  ||
+                pushEdges->ex_ld ||
+                pushEdges->ex_st ||
+                pushEdges->ld_ex
+            )
+                return VTA_ERR_SYNTAX;
+            
+            parsedInsn->deps.pop_prev  = popEdges->ex_st;
+            parsedInsn->deps.push_prev = pushEdges->st_ex;
+
+            parsedInsn->data.mem.pop_prev_dep  = parsedInsn->deps.pop_prev;
+            parsedInsn->data.mem.push_prev_dep = parsedInsn->deps.push_prev;
+
+            break;
+
+        case ASM_GEMM:
+        case ASM_GEMM_RST:
+        case ASM_ALU:
+            parsedInsn->deps.pop_prev  = popEdges->ld_ex;
+            parsedInsn->deps.pop_next  = popEdges->st_ex;
+            parsedInsn->deps.push_prev = pushEdges->ex_ld;
+            parsedInsn->deps.push_next = pushEdges->ex_st;
+
+            if (parsedInsn->kind == ASM_ALU) {
+                parsedInsn->data.alu.pop_prev_dep  = parsedInsn->deps.pop_prev;
+                parsedInsn->data.alu.pop_next_dep  = parsedInsn->deps.pop_next;
+                parsedInsn->data.alu.push_prev_dep = parsedInsn->deps.push_prev;
+                parsedInsn->data.alu.push_next_dep = parsedInsn->deps.push_next;
+            } else {
+                parsedInsn->data.gemm.pop_prev_dep  = parsedInsn->deps.pop_prev;
+                parsedInsn->data.gemm.pop_next_dep  = parsedInsn->deps.pop_next;
+                parsedInsn->data.gemm.push_prev_dep = parsedInsn->deps.push_prev;
+                parsedInsn->data.gemm.push_next_dep = parsedInsn->deps.push_next;
+            }
+
+            break;
+        
+        case ASM_NOOP:
+        case ASM_FINISH:
+            if (
+                popEdges->ex_ld  ||
+                popEdges->ex_st  ||
+                popEdges->ld_ex  ||
+                popEdges->st_ex  ||
+                pushEdges->ex_ld ||
+                pushEdges->ex_st ||
+                pushEdges->ld_ex ||
+                pushEdges->st_ex
+            )
+                return VTA_ERR_SYNTAX;
+
+            break;
+        default:
+            return VTA_ERR_SYNTAX;
+    }
+
+    return VTA_OK;
+}
+
+
 /*!
  * \brief Fills the label table.
  *
@@ -1369,16 +1539,20 @@ static VTAErr makeLT(
     int          *errLine
 ) {
     VTAParserContext ctx;
-    uint32_t currentUopIdx;
-    int IC;
 
     ctx.cursor = asmCode;
     ctx.lineNum = 1;
 
     LT_init(table);
 
+    uint32_t currentUopIdx;
     currentUopIdx = 0;
+
+    int IC;
     IC = 0;
+
+    VTADependenciesTransition pendingPop;
+    memset(&pendingPop, 0, sizeof(pendingPop));
 
     while (1) {
         VTAToken token;
@@ -1399,11 +1573,7 @@ static VTAErr makeLT(
             VTAUop parsedUop;
             VTAErr status;
 
-            status = parseUopLine(
-                &ctx,
-                token,
-                &parsedUop
-            );
+            status = parseUopLine(&ctx, token, &parsedUop);
 
             if (status != VTA_OK) {
                 *errLine = ctx.lineNum;
@@ -1435,6 +1605,17 @@ static VTAErr makeLT(
             nextToken.type == TOKEN_PUNCTUATION &&
             strcmp(nextToken.text, ":") == 0
         ) {
+            // * un label cant appear after a pop and before an insn
+            if (
+                pendingPop.ex_ld ||
+                pendingPop.ex_st ||
+                pendingPop.ld_ex ||
+                pendingPop.st_ex 
+            ) {
+                *errLine = ctx.lineNum;
+                return VTA_ERR_SYNTAX;
+            }
+
             getNextToken(&ctx);
 
             VTAErr status;
@@ -1453,34 +1634,82 @@ static VTAErr makeLT(
             continue;
         }
 
+        if (strcmp(token.text, "POP") == 0) {
+            VTAErr status;
+
+            // * to avoid two POP for the same insn
+            if (
+                pendingPop.ex_ld ||
+                pendingPop.ex_st ||
+                pendingPop.ld_ex ||
+                pendingPop.st_ex
+            ) {
+                *errLine = ctx.lineNum;
+                return VTA_ERR_SYNTAX;
+            }
+
+            status = parseDependencyLine(&ctx, &token, &pendingPop);
+            if (status != VTA_OK) {
+                *errLine = ctx.lineNum;
+                return status;
+            }
+
+            continue;
+        }
+
+        // * PUSH without insn
+        if (strcmp(token.text, "PUSH") == 0) {
+            *errLine = ctx.lineNum;
+            return VTA_ERR_SYNTAX;
+        }
+
         /*
          * Every supported instruction starts here.
          * FOR consumes both its own line and the following
-         * GEMM/GEMM.RST/ALU line.
+         * GEMM/GEMM.RST/ALU line
          */
         if (
-            strcmp(token.text, "FINISH") == 0 ||
-            strcmp(token.text, "NOOP") == 0 ||
-            strcmp(token.text, "LOAD") == 0 ||
-            strcmp(token.text, "STORE") == 0 ||
-            strcmp(token.text, "STOR") == 0 ||
-            strcmp(token.text, "FOR") == 0
+            strcmp(token.text, "FINISH")    == 0 ||
+            strcmp(token.text, "NOOP")      == 0 ||
+            strcmp(token.text, "LOAD")      == 0 ||
+            strcmp(token.text, "STORE")     == 0 ||
+            strcmp(token.text, "STOR")      == 0 ||
+            strcmp(token.text, "FOR")       == 0
         ) {
             VTAParsedInsn parsedInsn;
             VTAErr status;
 
             memset(&parsedInsn, 0, sizeof(parsedInsn));
 
-            status = parseInstruction(
-                &ctx,
-                &token,
-                &parsedInsn
-            );
+            status = parseInstruction(&ctx, &token, &parsedInsn);
 
             if (status != VTA_OK) {
                 *errLine = ctx.lineNum;
                 return status;
             }
+
+            // * check for PUSH
+            VTADependenciesTransition pushEdges;
+            memset(&pushEdges, 0, sizeof(pushEdges));
+
+            nextToken = peekNextToken(&ctx);
+
+            if (nextToken.type == TOKEN_IDENTIFIER && strcmp(nextToken.text, "PUSH") == 0) {
+                nextToken = getNextToken(&ctx);
+
+                status = parseDependencyLine(&ctx, &nextToken, &pushEdges);
+                if (status != VTA_OK) {
+                    *errLine = ctx.lineNum;
+                    return status;
+                }
+            }
+
+            status = applyDependencies(&parsedInsn, &pendingPop, &pushEdges);
+            if (status != VTA_OK) {
+                *errLine = ctx.lineNum;
+                return status;
+            }
+
 
             IC++;
 
@@ -1489,11 +1718,24 @@ static VTAErr makeLT(
                 return VTA_ERR_INSN_BUFFER_FULL;
             }
 
+            memset(&pendingPop, 0, sizeof(pendingPop));
+
             continue;
         }
 
         *errLine = ctx.lineNum;
         return VTA_ERR_UNKNOWN_MNEMONIC;
+    }
+
+    // * POP without insn
+    if (
+        pendingPop.ex_ld ||
+        pendingPop.ex_st ||
+        pendingPop.ld_ex ||
+        pendingPop.st_ex 
+    ) {
+        *errLine = ctx.lineNum;
+        return VTA_ERR_SYNTAX;
     }
 
     *estimatedInsn = IC;
@@ -1520,6 +1762,9 @@ static VTAErr encodeInstructions(
 
     currentUopIdx = 0;
     *numInsn = 0;
+
+    VTADependenciesTransition pendingPop;
+    memset(&pendingPop, 0, sizeof(pendingPop));
 
     while (1) {
         VTAToken token;
@@ -1567,9 +1812,45 @@ static VTAErr encodeInstructions(
             nextToken.type == TOKEN_PUNCTUATION &&
             strcmp(nextToken.text, ":") == 0
         ) {
+            // * no label between dep
+            if (
+                pendingPop.ex_ld ||
+                pendingPop.ex_st ||
+                pendingPop.ld_ex ||
+                pendingPop.st_ex
+            )
+                return VTA_ERR_SYNTAX;
+
             getNextToken(&ctx);
             continue;
         }
+
+        if (strcmp(token.text, "POP") == 0) {
+            VTAErr status;
+
+            if (
+                pendingPop.ex_ld ||
+                pendingPop.ex_st ||
+                pendingPop.ld_ex ||
+                pendingPop.st_ex
+            )
+                return VTA_ERR_SYNTAX;
+
+            status = parseDependencyLine(
+                &ctx,
+                &token,
+                &pendingPop
+            );
+
+            if (status != VTA_OK)
+                return status;
+
+            continue;
+        }
+
+        // * push w/o insn
+        if (strcmp(token.text, "PUSH") == 0)
+            return VTA_ERR_SYNTAX;
 
         /*
          * All currently implemented instructions go through
@@ -1611,21 +1892,49 @@ static VTAErr encodeInstructions(
                     return status;
             }
 
-            status = emitInstruction(
-                &parsedInsn,
-                insnBuffer,
-                maxInsn,
-                numInsn
-            );
+
+            VTADependenciesTransition pushEdges;
+            memset(&pushEdges, 0, sizeof(pushEdges));
+
+            nextToken = peekNextToken(&ctx);
+
+            if (
+                nextToken.type == TOKEN_IDENTIFIER &&
+                strcmp(nextToken.text, "PUSH") == 0
+            ) {
+                nextToken = getNextToken(&ctx);
+
+                status = parseDependencyLine(&ctx, &nextToken, &pushEdges);
+
+                if (status != VTA_OK)
+                    return status;
+            }
+
+            status = applyDependencies(&parsedInsn, &pendingPop, &pushEdges);
 
             if (status != VTA_OK)
                 return status;
+
+            status = emitInstruction(&parsedInsn, insnBuffer, maxInsn, numInsn);
+
+            if (status != VTA_OK)
+                return status;
+
+            memset(&pendingPop, 0, sizeof(pendingPop));
 
             continue;
         }
 
         return VTA_ERR_UNKNOWN_MNEMONIC;
     }
+
+    if (
+        pendingPop.ex_ld ||
+        pendingPop.ex_st ||
+        pendingPop.ld_ex ||
+        pendingPop.st_ex
+    )
+        return VTA_ERR_SYNTAX;
 
     return VTA_OK;
 }
