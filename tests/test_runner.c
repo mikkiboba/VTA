@@ -1366,7 +1366,7 @@ static int checkOutput(const char *testName, VTAErr status, const char *actual, 
 
     if (strcmp(actual, expected) != 0) {
         printf(" FAIL! %s produced unexpected output.\n", testName);
-        printf(" Expected: %s - Actual: %s\n", expected, actual);
+        printf(" - Expected:\n%s - Actual:\n%s\n", expected, actual);
         return 1;
     }
 
@@ -1780,7 +1780,7 @@ static int test_load(void) {
     VTAErr status;
     status = vtaDisassemble((VTAGenericInsn *)&insn, 1, NULL, 0, outBuffer, sizeof(outBuffer));
 
-    error += checkOutput("LOAD from UOP memory", status, outBuffer, "LOAD(BUF[7], MEM[11, 3])\n\n");
+    error += checkOutput("LOAD from UOP memory", status, outBuffer, "LOAD(UOP[7], MEM[11, 3])\n\n");
 
     printf(" 10.2 - Normal 2d load.\n");
 
@@ -1796,7 +1796,441 @@ static int test_load(void) {
     insn.x_stride       = 16;
 
     status = vtaDisassemble((VTAGenericInsn *)&insn, 1, NULL, 0, outBuffer, sizeof(outBuffer));
-    error += checkOutput("2D LOAD", status, outBuffer, "LOAD(BUF[4], MEM[100, 2, 8, 16])\n\n");
+    error += checkOutput("2D LOAD", status, outBuffer, "LOAD(INP[4], MEM[100, 2, 8, 16])\n\n");
+
+    return error;
+}
+
+
+static int test_roundtripLoad(void)
+{
+    printHeaderD("11. Check LOAD assemble/disassemble round-trip.");
+
+    int error;
+    error = 0;
+
+    VTAGenericInsn firstInsnBuffer[8];
+    VTAGenericInsn secondInsnBuffer[8];
+
+    VTAUop firstUopBuffer[8];
+    VTAUop secondUopBuffer[8];
+
+    memset(firstInsnBuffer, 0, sizeof(firstInsnBuffer));
+    memset(secondInsnBuffer, 0, sizeof(secondInsnBuffer));
+    memset(firstUopBuffer, 0, sizeof(firstUopBuffer));
+    memset(secondUopBuffer, 0, sizeof(secondUopBuffer));
+
+    const char *asmCode;
+    asmCode =
+        "POP (EX->LD)\n"
+        "LOAD(INP[4], MEM[100, 2, 8, 16])\n"
+        "PUSH (LD->EX)\n";
+
+    int firstNumInsn;
+    int firstNumUop;
+
+    firstNumInsn = 0;
+    firstNumUop = 0;
+
+    VTAErr status;
+    status = vtaAssemble(
+        asmCode,
+        firstInsnBuffer,
+        8,
+        &firstNumInsn,
+        firstUopBuffer,
+        8,
+        &firstNumUop
+    );
+
+    if (status != VTA_OK) {
+        printf(
+            " FAIL! First vtaAssemble returned status [%d].\n",
+            status
+        );
+        vtaErrorPrint(status, -1);
+        return 1;
+    }
+
+    char disassembled[OUT_BUF_SIZE];
+    memset(disassembled, 0, sizeof(disassembled));
+
+    status = vtaDisassemble(
+        firstInsnBuffer,
+        firstNumInsn,
+        firstUopBuffer,
+        firstNumUop,
+        disassembled,
+        sizeof(disassembled)
+    );
+
+    if (status != VTA_OK) {
+        printf(
+            " FAIL! vtaDisassemble returned status [%d].\n",
+            status
+        );
+        vtaErrorPrint(status, -1);
+        return 1;
+    }
+
+    printf(" Generated assembly:\n%s\n", disassembled);
+
+    int secondNumInsn;
+    int secondNumUop;
+
+    secondNumInsn = 0;
+    secondNumUop = 0;
+
+    status = vtaAssemble(
+        disassembled,
+        secondInsnBuffer,
+        8,
+        &secondNumInsn,
+        secondUopBuffer,
+        8,
+        &secondNumUop
+    );
+
+    if (status != VTA_OK) {
+        printf(
+            " FAIL! Second vtaAssemble returned status [%d].\n",
+            status
+        );
+        vtaErrorPrint(status, -1);
+        return 1;
+    }
+
+    if (firstNumInsn != secondNumInsn) {
+        printf(
+            " FAIL! Instruction count changed: %d -> %d.\n",
+            firstNumInsn,
+            secondNumInsn
+        );
+        error++;
+    }
+
+    if (firstNumUop != secondNumUop) {
+        printf(
+            " FAIL! UOP count changed: %d -> %d.\n",
+            firstNumUop,
+            secondNumUop
+        );
+        error++;
+    }
+
+    VTAMemInsn *firstInsn;
+    VTAMemInsn *secondInsn;
+
+    firstInsn = (VTAMemInsn *)&firstInsnBuffer[0];
+    secondInsn = (VTAMemInsn *)&secondInsnBuffer[0];
+
+    if (firstInsn->opcode != secondInsn->opcode) {
+        printf(" FAIL! Opcode changed.\n");
+        error++;
+    }
+
+    if (firstInsn->memory_type != secondInsn->memory_type) {
+        printf(" FAIL! Memory type changed.\n");
+        error++;
+    }
+
+    if (firstInsn->sram_base != secondInsn->sram_base) {
+        printf(" FAIL! SRAM base changed.\n");
+        error++;
+    }
+
+    if (firstInsn->dram_base != secondInsn->dram_base) {
+        printf(" FAIL! DRAM base changed.\n");
+        error++;
+    }
+
+    if (firstInsn->y_size != secondInsn->y_size) {
+        printf(" FAIL! Y size changed.\n");
+        error++;
+    }
+
+    if (firstInsn->x_size != secondInsn->x_size) {
+        printf(" FAIL! X size changed.\n");
+        error++;
+    }
+
+    if (firstInsn->x_stride != secondInsn->x_stride) {
+        printf(" FAIL! X stride changed.\n");
+        error++;
+    }
+
+    if (firstInsn->pop_prev_dep != secondInsn->pop_prev_dep) {
+        printf(" FAIL! POP dependency changed.\n");
+        error++;
+    }
+
+    if (firstInsn->push_prev_dep != secondInsn->push_prev_dep) {
+        printf(" FAIL! PUSH dependency changed.\n");
+        error++;
+    }
+
+    if (error == 0)
+        printf(" PASS! LOAD round-trip preserved the instruction.\n");
+
+    return error;
+}
+
+
+static int test_roundtripGemm(void)
+{
+    printHeaderD("12. Check GEMM assemble/disassemble round-trip.");
+
+    int error;
+    error = 0;
+
+    VTAGenericInsn firstInsnBuffer[8];
+    VTAGenericInsn secondInsnBuffer[8];
+
+    VTAUop firstUopBuffer[8];
+    VTAUop secondUopBuffer[8];
+
+    memset(firstInsnBuffer, 0, sizeof(firstInsnBuffer));
+    memset(secondInsnBuffer, 0, sizeof(secondInsnBuffer));
+    memset(firstUopBuffer, 0, sizeof(firstUopBuffer));
+    memset(secondUopBuffer, 0, sizeof(secondUopBuffer));
+
+    /*
+     * Start with 3 UOPs and one GEMM using them.
+     * Factor fields remain zero because the current disassembler
+     * does not emit them explicitly.
+     */
+    const char *asmCode;
+    asmCode =
+        "lbl1_bgn:\n"
+        "10, 20, 30\n"
+        "11, 21, 31\n"
+        "12, 22, 32\n"
+        "lbl1_end:\n"
+        "\n"
+        "POP (LD->EX, ST->EX)\n"
+        "FOR (2, 4) UOP (lbl1_bgn, lbl1_end)\n"
+        "GEMM(ACC[0:3], INP[0:3], WGT[0:3])\n"
+        "PUSH (EX->LD, EX->ST)\n";
+
+    int firstNumInsn;
+    int firstNumUop;
+
+    firstNumInsn = 0;
+    firstNumUop = 0;
+
+    VTAErr status;
+    status = vtaAssemble(
+        asmCode,
+        firstInsnBuffer,
+        8,
+        &firstNumInsn,
+        firstUopBuffer,
+        8,
+        &firstNumUop
+    );
+
+    if (status != VTA_OK) {
+        printf(
+            " FAIL! First vtaAssemble returned status [%d].\n",
+            status
+        );
+        vtaErrorPrint(status, -1);
+        return 1;
+    }
+
+    if (firstNumInsn != 1) {
+        printf(
+            " FAIL! Expected 1 instruction, got %d.\n",
+            firstNumInsn
+        );
+        error++;
+    }
+
+    if (firstNumUop != 3) {
+        printf(
+            " FAIL! Expected 3 UOPs, got %d.\n",
+            firstNumUop
+        );
+        error++;
+    }
+
+    char disassembled[OUT_BUF_SIZE];
+    memset(disassembled, 0, sizeof(disassembled));
+
+    status = vtaDisassemble(
+        firstInsnBuffer,
+        firstNumInsn,
+        firstUopBuffer,
+        firstNumUop,
+        disassembled,
+        sizeof(disassembled)
+    );
+
+    if (status != VTA_OK) {
+        printf(
+            " FAIL! vtaDisassemble returned status [%d].\n",
+            status
+        );
+        vtaErrorPrint(status, -1);
+        return 1;
+    }
+
+    printf(" Generated assembly:\n%s\n", disassembled);
+
+    int secondNumInsn;
+    int secondNumUop;
+
+    secondNumInsn = 0;
+    secondNumUop = 0;
+
+    status = vtaAssemble(
+        disassembled,
+        secondInsnBuffer,
+        8,
+        &secondNumInsn,
+        secondUopBuffer,
+        8,
+        &secondNumUop
+    );
+
+    if (status != VTA_OK) {
+        printf(
+            " FAIL! Second vtaAssemble returned status [%d].\n",
+            status
+        );
+        vtaErrorPrint(status, -1);
+        return 1;
+    }
+
+    if (firstNumInsn != secondNumInsn) {
+        printf(
+            " FAIL! Instruction count changed: %d -> %d.\n",
+            firstNumInsn,
+            secondNumInsn
+        );
+        error++;
+    }
+
+    if (firstNumUop != secondNumUop) {
+        printf(
+            " FAIL! UOP count changed: %d -> %d.\n",
+            firstNumUop,
+            secondNumUop
+        );
+        error++;
+    }
+
+    /*
+     * Compare the GEMM instruction.
+     */
+    VTAGemInsn *firstGemm;
+    VTAGemInsn *secondGemm;
+
+    firstGemm = (VTAGemInsn *)&firstInsnBuffer[0];
+    secondGemm = (VTAGemInsn *)&secondInsnBuffer[0];
+
+    if (firstGemm->opcode != secondGemm->opcode) {
+        printf(" FAIL! Opcode changed.\n");
+        error++;
+    }
+
+    if (firstGemm->reset_reg != secondGemm->reset_reg) {
+        printf(" FAIL! reset_reg changed.\n");
+        error++;
+    }
+
+    if (firstGemm->uop_bgn != secondGemm->uop_bgn) {
+        printf(" FAIL! uop_bgn changed.\n");
+        error++;
+    }
+
+    if (firstGemm->uop_end != secondGemm->uop_end) {
+        printf(" FAIL! uop_end changed.\n");
+        error++;
+    }
+
+    if (firstGemm->iter_out != secondGemm->iter_out) {
+        printf(" FAIL! iter_out changed.\n");
+        error++;
+    }
+
+    if (firstGemm->iter_in != secondGemm->iter_in) {
+        printf(" FAIL! iter_in changed.\n");
+        error++;
+    }
+
+    if (firstGemm->dst_factor_out != secondGemm->dst_factor_out) {
+        printf(" FAIL! dst_factor_out changed.\n");
+        error++;
+    }
+
+    if (firstGemm->src_factor_out != secondGemm->src_factor_out) {
+        printf(" FAIL! src_factor_out changed.\n");
+        error++;
+    }
+
+    if (firstGemm->wgt_factor_out != secondGemm->wgt_factor_out) {
+        printf(" FAIL! wgt_factor_out changed.\n");
+        error++;
+    }
+
+    if (firstGemm->pop_prev_dep != secondGemm->pop_prev_dep) {
+        printf(" FAIL! pop_prev_dep changed.\n");
+        error++;
+    }
+
+    if (firstGemm->pop_next_dep != secondGemm->pop_next_dep) {
+        printf(" FAIL! pop_next_dep changed.\n");
+        error++;
+    }
+
+    if (firstGemm->push_prev_dep != secondGemm->push_prev_dep) {
+        printf(" FAIL! push_prev_dep changed.\n");
+        error++;
+    }
+
+    if (firstGemm->push_next_dep != secondGemm->push_next_dep) {
+        printf(" FAIL! push_next_dep changed.\n");
+        error++;
+    }
+
+    /*
+     * Compare all UOPs.
+     */
+    for (int i = 0; i < firstNumUop && i < secondNumUop; i++) {
+        if (firstUopBuffer[i].dst_idx != secondUopBuffer[i].dst_idx) {
+            printf(
+                " FAIL! UOP[%d] dst_idx changed: %u -> %u.\n",
+                i,
+                (unsigned)firstUopBuffer[i].dst_idx,
+                (unsigned)secondUopBuffer[i].dst_idx
+            );
+            error++;
+        }
+
+        if (firstUopBuffer[i].src_idx != secondUopBuffer[i].src_idx) {
+            printf(
+                " FAIL! UOP[%d] src_idx changed: %u -> %u.\n",
+                i,
+                (unsigned)firstUopBuffer[i].src_idx,
+                (unsigned)secondUopBuffer[i].src_idx
+            );
+            error++;
+        }
+
+        if (firstUopBuffer[i].wgt_idx != secondUopBuffer[i].wgt_idx) {
+            printf(
+                " FAIL! UOP[%d] wgt_idx changed: %u -> %u.\n",
+                i,
+                (unsigned)firstUopBuffer[i].wgt_idx,
+                (unsigned)secondUopBuffer[i].wgt_idx
+            );
+            error++;
+        }
+    }
+
+    if (error == 0)
+        printf(" PASS! GEMM round-trip preserved instruction and UOPs.\n");
 
     return error;
 }
@@ -1839,6 +2273,7 @@ static int test_alu(void) {
     memset(outBuffer, 0, sizeof(outBuffer));
 
     insn.opcode     = VTA_OPCODE_ALU;
+    insn.alu_opcode = VTA_ALU_OPCODE_MIN;
     insn.uop_bgn    = 0;
     insn.uop_end    = 2;
     insn.iter_out   = 3;
@@ -1849,19 +2284,20 @@ static int test_alu(void) {
     VTAErr status;
     status = vtaDisassemble((VTAGenericInsn *)&insn, 1, NULL, 2, outBuffer, sizeof(outBuffer));
 
-    error += checkOutput("ALU with intermediate", status, outBuffer, "FOR (3, 4) UOP (lbl1_bgn, lbl1_end)\nALU.OP(DST[0:2], -7)\n\n");
+    error += checkOutput("ALU with intermediate", status, outBuffer, "FOR (3, 4) UOP (lbl1_bgn, lbl1_end)\nALU.MIN(DST[0:2], -7)\n\n");
 
     printf(" 12.2 - ALU without immediate.\n");
 
     memset(&insn, 0, sizeof(insn));
     memset(outBuffer, 0, sizeof(outBuffer));
 
-    insn.opcode = VTA_OPCODE_ALU;
-    insn.uop_bgn = 1;
-    insn.uop_end = 4;
-    insn.iter_out = 2;
-    insn.iter_in = 5;
-    insn.use_imm = 0;
+    insn.opcode     = VTA_OPCODE_ALU;
+    insn.alu_opcode = VTA_ALU_OPCODE_ADD;
+    insn.uop_bgn    = 1;
+    insn.uop_end    = 4;
+    insn.iter_out   = 2;
+    insn.iter_in    = 5;
+    insn.use_imm    = 0;
 
     status = vtaDisassemble(
         (VTAGenericInsn *)&insn,
@@ -1877,9 +2313,470 @@ static int test_alu(void) {
         status,
         outBuffer,
         "FOR (2, 5) UOP (lbl1_bgn, lbl1_end)\n"
-        "ALU.OP(DST[1:4], SRC[1:4])\n\n"
+        "ALU.ADD(DST[1:4], SRC[1:4])\n\n"
     );
 
+
+    return error;
+}
+
+
+static int test_roundtripAluImmediate(void)
+{
+    printHeaderD("Round-trip ALU immediate + dependencies.");
+
+    int error;
+    error = 0;
+
+    VTAGenericInsn firstInsnBuffer[8];
+    VTAGenericInsn secondInsnBuffer[8];
+
+    VTAUop firstUopBuffer[8];
+    VTAUop secondUopBuffer[8];
+
+    memset(firstInsnBuffer, 0, sizeof(firstInsnBuffer));
+    memset(secondInsnBuffer, 0, sizeof(secondInsnBuffer));
+    memset(firstUopBuffer, 0, sizeof(firstUopBuffer));
+    memset(secondUopBuffer, 0, sizeof(secondUopBuffer));
+
+    const char *asmCode;
+    asmCode =
+        "lbl1_bgn:\n"
+        "10, 20, 30\n"
+        "11, 21, 31\n"
+        "12, 22, 32\n"
+        "lbl1_end:\n"
+        "\n"
+        "POP (LD->EX, ST->EX)\n"
+        "FOR (3, 5) UOP (lbl1_bgn, lbl1_end)\n"
+        "ALU.ADD(DST[0:3], -7)\n"
+        "PUSH (EX->LD, EX->ST)\n";
+
+    int firstNumInsn;
+    int firstNumUop;
+
+    firstNumInsn = 0;
+    firstNumUop = 0;
+
+    VTAErr status;
+    status = vtaAssemble(
+        asmCode,
+        firstInsnBuffer,
+        8,
+        &firstNumInsn,
+        firstUopBuffer,
+        8,
+        &firstNumUop
+    );
+
+    if (status != VTA_OK) {
+        printf(
+            " FAIL! First vtaAssemble returned status [%d].\n",
+            status
+        );
+        vtaErrorPrint(status, -1);
+        return 1;
+    }
+
+    char disassembled[OUT_BUF_SIZE];
+    memset(disassembled, 0, sizeof(disassembled));
+
+    status = vtaDisassemble(
+        firstInsnBuffer,
+        firstNumInsn,
+        firstUopBuffer,
+        firstNumUop,
+        disassembled,
+        sizeof(disassembled)
+    );
+
+    if (status != VTA_OK) {
+        printf(
+            " FAIL! vtaDisassemble returned status [%d].\n",
+            status
+        );
+        vtaErrorPrint(status, -1);
+        return 1;
+    }
+
+    printf(" Generated assembly:\n%s\n", disassembled);
+
+    int secondNumInsn;
+    int secondNumUop;
+
+    secondNumInsn = 0;
+    secondNumUop = 0;
+
+    status = vtaAssemble(
+        disassembled,
+        secondInsnBuffer,
+        8,
+        &secondNumInsn,
+        secondUopBuffer,
+        8,
+        &secondNumUop
+    );
+
+    if (status != VTA_OK) {
+        printf(
+            " FAIL! Second vtaAssemble returned status [%d].\n",
+            status
+        );
+        vtaErrorPrint(status, -1);
+        return 1;
+    }
+
+    if (firstNumInsn != secondNumInsn) {
+        printf(
+            " FAIL! Instruction count changed: %d -> %d.\n",
+            firstNumInsn,
+            secondNumInsn
+        );
+        error++;
+    }
+
+    if (firstNumUop != secondNumUop) {
+        printf(
+            " FAIL! UOP count changed: %d -> %d.\n",
+            firstNumUop,
+            secondNumUop
+        );
+        error++;
+    }
+
+    VTAAluInsn *firstAlu;
+    VTAAluInsn *secondAlu;
+
+    firstAlu = (VTAAluInsn *)&firstInsnBuffer[0];
+    secondAlu = (VTAAluInsn *)&secondInsnBuffer[0];
+
+    if (firstAlu->opcode != secondAlu->opcode) {
+        printf(" FAIL! opcode changed.\n");
+        error++;
+    }
+
+    if (firstAlu->alu_opcode != secondAlu->alu_opcode) {
+        printf(
+            " FAIL! alu_opcode changed: %u -> %u.\n",
+            (unsigned)firstAlu->alu_opcode,
+            (unsigned)secondAlu->alu_opcode
+        );
+        error++;
+    }
+
+    if (firstAlu->uop_bgn != secondAlu->uop_bgn) {
+        printf(" FAIL! uop_bgn changed.\n");
+        error++;
+    }
+
+    if (firstAlu->uop_end != secondAlu->uop_end) {
+        printf(" FAIL! uop_end changed.\n");
+        error++;
+    }
+
+    if (firstAlu->iter_out != secondAlu->iter_out) {
+        printf(" FAIL! iter_out changed.\n");
+        error++;
+    }
+
+    if (firstAlu->iter_in != secondAlu->iter_in) {
+        printf(" FAIL! iter_in changed.\n");
+        error++;
+    }
+
+    if (firstAlu->use_imm != secondAlu->use_imm) {
+        printf(" FAIL! use_imm changed.\n");
+        error++;
+    }
+
+    if (firstAlu->imm != secondAlu->imm) {
+        printf(
+            " FAIL! immediate changed: %d -> %d.\n",
+            (int)firstAlu->imm,
+            (int)secondAlu->imm
+        );
+        error++;
+    }
+
+    if (firstAlu->pop_prev_dep != secondAlu->pop_prev_dep) {
+        printf(" FAIL! pop_prev_dep changed.\n");
+        error++;
+    }
+
+    if (firstAlu->pop_next_dep != secondAlu->pop_next_dep) {
+        printf(" FAIL! pop_next_dep changed.\n");
+        error++;
+    }
+
+    if (firstAlu->push_prev_dep != secondAlu->push_prev_dep) {
+        printf(" FAIL! push_prev_dep changed.\n");
+        error++;
+    }
+
+    if (firstAlu->push_next_dep != secondAlu->push_next_dep) {
+        printf(" FAIL! push_next_dep changed.\n");
+        error++;
+    }
+
+    /*
+     * Compare all UOPs.
+     */
+    for (int i = 0; i < firstNumUop && i < secondNumUop; i++) {
+        if (
+            firstUopBuffer[i].dst_idx !=
+            secondUopBuffer[i].dst_idx
+        ) {
+            printf(" FAIL! UOP[%d] dst_idx changed.\n", i);
+            error++;
+        }
+
+        if (
+            firstUopBuffer[i].src_idx !=
+            secondUopBuffer[i].src_idx
+        ) {
+            printf(" FAIL! UOP[%d] src_idx changed.\n", i);
+            error++;
+        }
+
+        if (
+            firstUopBuffer[i].wgt_idx !=
+            secondUopBuffer[i].wgt_idx
+        ) {
+            printf(" FAIL! UOP[%d] wgt_idx changed.\n", i);
+            error++;
+        }
+    }
+
+    if (error == 0)
+        printf(
+            " PASS! ALU immediate round-trip preserved "
+            "instruction and UOPs.\n"
+        );
+
+    return error;
+}
+
+
+static int test_roundtripAluSrc(void)
+{
+    printHeaderD("Round-trip ALU SRC + dependencies.");
+
+    int error;
+    error = 0;
+
+    VTAGenericInsn firstInsnBuffer[8];
+    VTAGenericInsn secondInsnBuffer[8];
+
+    VTAUop firstUopBuffer[8];
+    VTAUop secondUopBuffer[8];
+
+    memset(firstInsnBuffer, 0, sizeof(firstInsnBuffer));
+    memset(secondInsnBuffer, 0, sizeof(secondInsnBuffer));
+    memset(firstUopBuffer, 0, sizeof(firstUopBuffer));
+    memset(secondUopBuffer, 0, sizeof(secondUopBuffer));
+
+    const char *asmCode;
+    asmCode =
+        "lbl1_bgn:\n"
+        "10, 20, 30\n"
+        "11, 21, 31\n"
+        "12, 22, 32\n"
+        "lbl1_end:\n"
+        "\n"
+        "POP (LD->EX, ST->EX)\n"
+        "FOR (2, 4) UOP (lbl1_bgn, lbl1_end)\n"
+        "ALU.MAX(DST[0:3], SRC[0:3])\n"
+        "PUSH (EX->LD, EX->ST)\n";
+
+    int firstNumInsn;
+    int firstNumUop;
+
+    firstNumInsn = 0;
+    firstNumUop = 0;
+
+    VTAErr status;
+    status = vtaAssemble(
+        asmCode,
+        firstInsnBuffer,
+        8,
+        &firstNumInsn,
+        firstUopBuffer,
+        8,
+        &firstNumUop
+    );
+
+    if (status != VTA_OK) {
+        printf(
+            " FAIL! First vtaAssemble returned status [%d].\n",
+            status
+        );
+        vtaErrorPrint(status, -1);
+        return 1;
+    }
+
+    char disassembled[OUT_BUF_SIZE];
+    memset(disassembled, 0, sizeof(disassembled));
+
+    status = vtaDisassemble(
+        firstInsnBuffer,
+        firstNumInsn,
+        firstUopBuffer,
+        firstNumUop,
+        disassembled,
+        sizeof(disassembled)
+    );
+
+    if (status != VTA_OK) {
+        printf(
+            " FAIL! vtaDisassemble returned status [%d].\n",
+            status
+        );
+        vtaErrorPrint(status, -1);
+        return 1;
+    }
+
+    printf(" Generated assembly:\n%s\n", disassembled);
+
+    int secondNumInsn;
+    int secondNumUop;
+
+    secondNumInsn = 0;
+    secondNumUop = 0;
+
+    status = vtaAssemble(
+        disassembled,
+        secondInsnBuffer,
+        8,
+        &secondNumInsn,
+        secondUopBuffer,
+        8,
+        &secondNumUop
+    );
+
+    if (status != VTA_OK) {
+        printf(
+            " FAIL! Second vtaAssemble returned status [%d].\n",
+            status
+        );
+        vtaErrorPrint(status, -1);
+        return 1;
+    }
+
+    if (firstNumInsn != secondNumInsn) {
+        printf(
+            " FAIL! Instruction count changed: %d -> %d.\n",
+            firstNumInsn,
+            secondNumInsn
+        );
+        error++;
+    }
+
+    if (firstNumUop != secondNumUop) {
+        printf(
+            " FAIL! UOP count changed: %d -> %d.\n",
+            firstNumUop,
+            secondNumUop
+        );
+        error++;
+    }
+
+    VTAAluInsn *firstAlu;
+    VTAAluInsn *secondAlu;
+
+    firstAlu = (VTAAluInsn *)&firstInsnBuffer[0];
+    secondAlu = (VTAAluInsn *)&secondInsnBuffer[0];
+
+    if (firstAlu->opcode != secondAlu->opcode) {
+        printf(" FAIL! opcode changed.\n");
+        error++;
+    }
+
+    if (firstAlu->alu_opcode != secondAlu->alu_opcode) {
+        printf(" FAIL! alu_opcode changed.\n");
+        error++;
+    }
+
+    if (firstAlu->uop_bgn != secondAlu->uop_bgn) {
+        printf(" FAIL! uop_bgn changed.\n");
+        error++;
+    }
+
+    if (firstAlu->uop_end != secondAlu->uop_end) {
+        printf(" FAIL! uop_end changed.\n");
+        error++;
+    }
+
+    if (firstAlu->iter_out != secondAlu->iter_out) {
+        printf(" FAIL! iter_out changed.\n");
+        error++;
+    }
+
+    if (firstAlu->iter_in != secondAlu->iter_in) {
+        printf(" FAIL! iter_in changed.\n");
+        error++;
+    }
+
+    if (firstAlu->use_imm != secondAlu->use_imm) {
+        printf(" FAIL! use_imm changed.\n");
+        error++;
+    }
+
+    if (firstAlu->use_imm != 0) {
+        printf(" FAIL! Expected SRC mode, got immediate mode.\n");
+        error++;
+    }
+
+    if (firstAlu->pop_prev_dep != secondAlu->pop_prev_dep) {
+        printf(" FAIL! pop_prev_dep changed.\n");
+        error++;
+    }
+
+    if (firstAlu->pop_next_dep != secondAlu->pop_next_dep) {
+        printf(" FAIL! pop_next_dep changed.\n");
+        error++;
+    }
+
+    if (firstAlu->push_prev_dep != secondAlu->push_prev_dep) {
+        printf(" FAIL! push_prev_dep changed.\n");
+        error++;
+    }
+
+    if (firstAlu->push_next_dep != secondAlu->push_next_dep) {
+        printf(" FAIL! push_next_dep changed.\n");
+        error++;
+    }
+
+    for (int i = 0; i < firstNumUop && i < secondNumUop; i++) {
+        if (
+            firstUopBuffer[i].dst_idx !=
+            secondUopBuffer[i].dst_idx
+        ) {
+            printf(" FAIL! UOP[%d] dst_idx changed.\n", i);
+            error++;
+        }
+
+        if (
+            firstUopBuffer[i].src_idx !=
+            secondUopBuffer[i].src_idx
+        ) {
+            printf(" FAIL! UOP[%d] src_idx changed.\n", i);
+            error++;
+        }
+
+        if (
+            firstUopBuffer[i].wgt_idx !=
+            secondUopBuffer[i].wgt_idx
+        ) {
+            printf(" FAIL! UOP[%d] wgt_idx changed.\n", i);
+            error++;
+        }
+    }
+
+    if (error == 0)
+        printf(
+            " PASS! ALU SRC round-trip preserved "
+            "instruction and UOPs.\n"
+        );
 
     return error;
 }
@@ -1974,11 +2871,11 @@ static int test_dependencies(void)
     memset(&load, 0, sizeof(load));
     memset(outBuffer, 0, sizeof(outBuffer));
 
-    load.opcode = VTA_OPCODE_LOAD;
-    load.memory_type = VTA_MEM_ID_UOP;
-    load.sram_base = 1;
-    load.dram_base = 2;
-    load.x_size = 3;
+    load.opcode         = VTA_OPCODE_LOAD;
+    load.memory_type    = VTA_MEM_ID_UOP;
+    load.sram_base      = 1;
+    load.dram_base      = 2;
+    load.x_size         = 3;
 
     load.pop_prev_dep = 1;
     load.push_prev_dep = 1;
@@ -1997,7 +2894,7 @@ static int test_dependencies(void)
         status,
         outBuffer,
         "POP (EX->LD)\n"
-        "LOAD(BUF[1], MEM[2, 3])\n"
+        "LOAD(UOP[1], MEM[2, 3])\n"
         "PUSH (LD->EX)\n\n"
     );
 
@@ -2094,6 +2991,10 @@ void executeTestsDisassembler(int *error) {
     *error += test_finish();
     *error += test_noop();
     *error += test_load();
+    *error += test_roundtripLoad();
+    *error += test_roundtripGemm();
+    *error += test_roundtripAluImmediate();
+    *error += test_roundtripAluSrc();
     *error += test_store();
     *error += test_alu();
     *error += test_gemm();
