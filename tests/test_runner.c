@@ -1438,6 +1438,9 @@ static int test_uopOutOfBounds(void) {
     VTAErr status;
     
     char outBuffer[OUT_BUF_SIZE];
+    
+    VTAUop uopBuffer[VTA_UOP_BUFF_DEPTH];
+    memset(uopBuffer, 0, sizeof(uopBuffer));
 
     VTAGemInsn testGemmInsn;
     memset(&testGemmInsn, 0, sizeof(testGemmInsn));
@@ -1450,14 +1453,14 @@ static int test_uopOutOfBounds(void) {
     testGemmInsn.uop_end = VTA_UOP_BUFF_DEPTH + 1;
 
     printf(" 3.1 - Passing GEMM instruction with uop_end (%u) > VTA_UOP_BUFF_DEPTH (%u)\n", (unsigned)testGemmInsn.uop_end, (unsigned)VTA_UOP_BUFF_DEPTH);
-    status = vtaDisassemble(insn, 1, NULL, VTA_UOP_BUFF_DEPTH, outBuffer, sizeof(outBuffer));
+    status = vtaDisassemble(insn, 1, uopBuffer, VTA_UOP_BUFF_DEPTH, outBuffer, sizeof(outBuffer));
     checkStatus(status, VTA_ERR_UOP_OUT_OF_BOUNDS, &error);
 
     testGemmInsn.uop_bgn = 10;
     testGemmInsn.uop_end = 9;
 
     printf(" 3.2 - Passing GEMM instruction with uop_bgn (%u) > uop_end (%u)\n", (unsigned)testGemmInsn.uop_bgn, (unsigned)testGemmInsn.uop_end);
-    status = vtaDisassemble(insn, 1, NULL, VTA_UOP_BUFF_DEPTH, outBuffer, sizeof(outBuffer));
+    status = vtaDisassemble(insn, 1, uopBuffer, VTA_UOP_BUFF_DEPTH, outBuffer, sizeof(outBuffer));
     checkStatus(status, VTA_ERR_UOP_OUT_OF_BOUNDS, &error);
 
     return error;
@@ -1489,6 +1492,15 @@ static int test_nullUopBuffer(void) {
 
     printf(" 4.1 - Disassembling GEMM with uopBuffer = NULL\n");
     status = vtaDisassemble(insn, 1, NULL, 5, outBuffer, sizeof(outBuffer));
+    checkStatus(status, VTA_ERR_NULLPTR, &error);
+
+    printf(" 4.2 - Passing numUop = 0 with uopBuffer = NULL\n");
+    VTAGenericInsn finish;
+    memset(&finish, 0, sizeof(finish));
+
+    finish.opcode = VTA_OPCODE_FINISH;
+
+    status = vtaDisassemble(&finish, 1, NULL, 0, outBuffer, sizeof(outBuffer));
     checkStatus(status, VTA_OK, &error);
 
     return error;
@@ -1678,6 +1690,9 @@ static int test_uopBufferSize(void) {
     VTAErr status;
     char outBuffer[OUT_BUF_SIZE];
 
+    VTAUop uopBuffer[4];
+    memset(uopBuffer, 0, sizeof(uopBuffer));
+
     VTAGemInsn testGemmInsn;
     memset(&testGemmInsn, 0, sizeof(testGemmInsn));
     VTAGenericInsn *insn;
@@ -1692,7 +1707,7 @@ static int test_uopBufferSize(void) {
 
     printf(" 7.1 - Passing uop_end (%u) > numUop (%u)\n", (unsigned)testGemmInsn.uop_end, (unsigned)numUop);
 
-    status = vtaDisassemble(insn, 1, NULL, numUop, outBuffer, sizeof(outBuffer));
+    status = vtaDisassemble(insn, 1, uopBuffer, numUop, outBuffer, sizeof(outBuffer));
     checkStatus(status, VTA_ERR_UOP_OUT_OF_BOUNDS, &error);
 
     testGemmInsn.uop_bgn = 0;
@@ -1700,7 +1715,7 @@ static int test_uopBufferSize(void) {
 
     printf(" 7.2 - Passing valid range [%u, %u) with numUop = %u\n", (unsigned)testGemmInsn.uop_bgn, (unsigned)testGemmInsn.uop_end, (unsigned)numUop);
 
-    status = vtaDisassemble(insn, 1, NULL, numUop, outBuffer, sizeof(outBuffer));
+    status = vtaDisassemble(insn, 1, uopBuffer, numUop, outBuffer, sizeof(outBuffer));
     checkStatus(status, VTA_OK, &error);
 
     return error;
@@ -2267,6 +2282,9 @@ static int test_alu(void) {
     VTAAluInsn insn;
     char outBuffer[OUT_BUF_SIZE];
 
+    VTAUop uopBuffer[4];
+    memset(uopBuffer, 0, sizeof(uopBuffer));
+
     printf(" 12.1 - ALU with intermediate.\n");
 
     memset(&insn, 0, sizeof(insn));
@@ -2282,10 +2300,21 @@ static int test_alu(void) {
     insn.imm        = -7;
 
     VTAErr status;
-    status = vtaDisassemble((VTAGenericInsn *)&insn, 1, NULL, 2, outBuffer, sizeof(outBuffer));
+    status = vtaDisassemble((VTAGenericInsn *)&insn, 1, uopBuffer, 2, outBuffer, sizeof(outBuffer));
 
-    error += checkOutput("ALU with intermediate", status, outBuffer, "FOR (3, 4) UOP (lbl1_bgn, lbl1_end)\nALU.MIN(DST[0:2], -7)\n\n");
-
+    error += checkOutput(
+        "ALU with immediate",
+        status,
+        outBuffer,
+        "lbl1_bgn:\n"
+        "   0, 0, 0\n"
+        "   0, 0, 0\n"
+        "lbl1_end:\n"
+        "\n"
+        "FOR (3, 4) UOP (lbl1_bgn, lbl1_end)\n"
+        "ALU.MIN(DST[0:2], -7)\n"
+        "\n"
+    );
     printf(" 12.2 - ALU without immediate.\n");
 
     memset(&insn, 0, sizeof(insn));
@@ -2299,23 +2328,23 @@ static int test_alu(void) {
     insn.iter_in    = 5;
     insn.use_imm    = 0;
 
-    status = vtaDisassemble(
-        (VTAGenericInsn *)&insn,
-        1,
-        NULL,
-        4,
-        outBuffer,
-        sizeof(outBuffer)
-    );
-
+    status = vtaDisassemble((VTAGenericInsn *)&insn, 1, uopBuffer, 4, outBuffer, sizeof(outBuffer));
+    
     error += checkOutput(
         "ALU without immediate",
         status,
         outBuffer,
+        "   0, 0, 0\n"
+        "lbl1_bgn:\n"
+        "   0, 0, 0\n"
+        "   0, 0, 0\n"
+        "   0, 0, 0\n"
+        "lbl1_end:\n"
+        "\n"
         "FOR (2, 5) UOP (lbl1_bgn, lbl1_end)\n"
-        "ALU.ADD(DST[1:4], SRC[1:4])\n\n"
+        "ALU.ADD(DST[1:4], SRC[1:4])\n"
+        "\n"
     );
-
 
     return error;
 }
@@ -2791,21 +2820,24 @@ static int test_gemm(void)
     VTAGemInsn insn;
     char outBuffer[OUT_BUF_SIZE];
 
+    VTAUop uopBuffer[5];
+    memset(uopBuffer, 0, sizeof(uopBuffer));
+
     printf(" 13.1 - Normal GEMM.\n");
     memset(&insn, 0, sizeof(insn));
     memset(outBuffer, 0, sizeof(outBuffer));
 
     insn.opcode = VTA_OPCODE_GEMM;
-    insn.uop_bgn = 0;
-    insn.uop_end = 3;
-    insn.iter_out = 2;
-    insn.iter_in = 4;
-    insn.reset_reg = 0;
+    insn.uop_bgn    = 0;
+    insn.uop_end    = 3;
+    insn.iter_out   = 2;
+    insn.iter_in    = 4;
+    insn.reset_reg  = 0;
 
     VTAErr status = vtaDisassemble(
         (VTAGenericInsn *)&insn,
         1,
-        NULL,
+        uopBuffer,
         3,
         outBuffer,
         sizeof(outBuffer)
@@ -2815,8 +2847,15 @@ static int test_gemm(void)
         "GEMM",
         status,
         outBuffer,
+        "lbl1_bgn:\n"
+        "   0, 0, 0\n"
+        "   0, 0, 0\n"
+        "   0, 0, 0\n"
+        "lbl1_end:\n"
+        "\n"
         "FOR (2, 4) UOP (lbl1_bgn, lbl1_end)\n"
-        "GEMM(ACC[0:3], INP[0:3], WGT[0:3])\n\n"
+        "GEMM(ACC[0:3], INP[0:3], WGT[0:3])\n"
+        "\n"
     );
 
 
@@ -2834,7 +2873,7 @@ static int test_gemm(void)
     status = vtaDisassemble(
         (VTAGenericInsn *)&insn,
         1,
-        NULL,
+        uopBuffer,
         5,
         outBuffer,
         sizeof(outBuffer)
@@ -2844,8 +2883,17 @@ static int test_gemm(void)
         "GEMM.RST",
         status,
         outBuffer,
+        "   0, 0, 0\n"
+        "   0, 0, 0\n"
+        "lbl1_bgn:\n"
+        "   0, 0, 0\n"
+        "   0, 0, 0\n"
+        "   0, 0, 0\n"
+        "lbl1_end:\n"
+        "\n"
         "FOR (1, 6) UOP (lbl1_bgn, lbl1_end)\n"
-        "GEMM.RST(ACC[2:5])\n\n"
+        "GEMM.RST(ACC[2:5])\n"
+        "\n"
     );
 
     return error;
@@ -2860,6 +2908,8 @@ static int test_dependencies(void)
 
     char outBuffer[OUT_BUF_SIZE];
 
+    VTAUop gemmUopBuffer[1];
+    memset(gemmUopBuffer, 0, sizeof(gemmUopBuffer));
 
     /*
      * Current disassembler mapping:
@@ -2960,7 +3010,7 @@ static int test_dependencies(void)
     status = vtaDisassemble(
         (VTAGenericInsn *)&gemm,
         1,
-        NULL,
+        gemmUopBuffer,
         1,
         outBuffer,
         sizeof(outBuffer)
@@ -2970,10 +3020,15 @@ static int test_dependencies(void)
         "GEMM dependencies",
         status,
         outBuffer,
+        "lbl1_bgn:\n"
+        "   0, 0, 0\n"
+        "lbl1_end:\n"
+        "\n"
         "POP (LD->EX, ST->EX)\n"
         "FOR (1, 1) UOP (lbl1_bgn, lbl1_end)\n"
         "GEMM(ACC[0:1], INP[0:1], WGT[0:1])\n"
-        "PUSH (EX->LD, EX->ST)\n\n"
+        "PUSH (EX->LD, EX->ST)\n"
+        "\n"
     );
 
     return error;

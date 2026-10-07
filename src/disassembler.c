@@ -234,6 +234,9 @@ VTAErr vtaDisassemble(
     if (insnBuffer == NULL || outBuffer == NULL)
         return VTA_ERR_NULLPTR;
 
+    if (numUop > 0 && uopBuffer == NULL)
+        return VTA_ERR_NULLPTR;
+
     if (numInsn <= 0)
         return VTA_ERR_INVALID_INSN_SIZE;
 
