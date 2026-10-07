@@ -697,6 +697,8 @@ static VTAErr parseLoad(VTAParserContext *ctx, VTAParsedInsn *parsedInsn) {
         parsedInsn->data.mem.memory_type = VTA_MEM_ID_WGT;
     else if (strcmp(token.text, "ACC") == 0)
         parsedInsn->data.mem.memory_type = VTA_MEM_ID_ACC;
+    else if (strcmp(token.text, "ACC_8BIT") == 0)
+        parsedInsn->data.mem.memory_type = VTA_MEM_ID_ACC_8BIT;
     else
         return VTA_ERR_UNKNOWN_MNEMONIC;
 

@@ -411,6 +411,10 @@ VTAErr vtaDisassemble(
                         memoryType = "ACC";
                         break;
 
+                    case VTA_MEM_ID_ACC_8BIT:
+                        memoryType = "ACC_8BIT";
+                        break;
+
                     default:
                         free(labels);
                         return VTA_ERR_UNKNOWN_OPCODE;
