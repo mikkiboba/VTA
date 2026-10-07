@@ -1,6 +1,19 @@
+<div align="center">
+
 # VTA Project
 
+### VTA assembler / disassembler
+
+[![Build](...)](...)
+[![License](...)](...)
+[![Version](...)](...)
+
+A C library for assembling and disassembling instructions for the Versatile Tensor Accelerator (VTA).
+The project is built upon the VTA hardware specification distributed 
+
 C-based project which uses the API of TVM v0.18.0 to program the VTA simulator.
+
+</div>
 
 ## Setup
 
