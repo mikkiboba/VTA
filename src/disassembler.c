@@ -571,7 +571,7 @@ VTAErr vtaDisassemble(
                     APPEND(
                         outBuffer, outBufferSize, &offset,
                         "FOR (%u, %u) UOP (lbl%d_bgn, lbl%d_end) "
-                        "FACTORS(%u, %u, %u, %u)",
+                        "FACTORS(%u, %u, %u, %u)\n",
                         alu->iter_out, alu->iter_in, currentLabel, currentLabel,
                         alu->dst_factor_out, alu->dst_factor_in, alu->src_factor_out, alu->src_factor_in
                     );
