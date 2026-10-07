@@ -505,6 +505,12 @@ static VTAErr parseUopLine(
     if (firstToken.value < 0)
         return VTA_ERR_OUT_OF_RANGE;
 
+    uint64_t maxDst;
+    maxDst = (UINT64_C(1) << VTA_LOG_ACC_BUFF_DEPTH) - 1;
+
+    if ((uint64_t)firstToken.value > maxDst)
+        return VTA_ERR_OUT_OF_RANGE;
+
     parsedUop->dst_idx = (uint32_t)firstToken.value;
 
     VTAToken token;
@@ -520,6 +526,12 @@ static VTAErr parseUopLine(
     if (token.value < 0)
         return VTA_ERR_OUT_OF_RANGE;
 
+    uint64_t maxSrc;
+    maxSrc = (UINT64_C(1) << VTA_LOG_ACC_BUFF_DEPTH) - 1;
+
+    if ((uint64_t)firstToken.value > maxSrc)
+        return VTA_ERR_OUT_OF_RANGE;    
+
     parsedUop->src_idx = (uint32_t)token.value;
 
     token = getNextToken(ctx);
@@ -532,6 +544,12 @@ static VTAErr parseUopLine(
         return VTA_ERR_SYNTAX;
     
     if (token.value < 0) 
+        return VTA_ERR_OUT_OF_RANGE;
+
+    uint64_t maxWgt;
+    maxWgt = (UINT64_C(1) << VTA_LOG_ACC_BUFF_DEPTH) - 1;
+
+    if ((uint64_t)firstToken.value > maxWgt)
         return VTA_ERR_OUT_OF_RANGE;
 
     parsedUop->wgt_idx = (uint32_t)token.value;
