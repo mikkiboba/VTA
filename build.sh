@@ -106,6 +106,11 @@ gcc \
     -o "$BUILD_DIR/vtaBuild"
 
 
+echo ">>> Running test suite..."
+LD_LIBRARY_PATH="$TVM_BUILD_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+    "$BUILD_DIR/vtaBuild"
+
+
 echo ">>> Build completed."
 echo ">>> Static library: build/libvta.a"
 echo ">>> Test executable: build/vtaBuild"
