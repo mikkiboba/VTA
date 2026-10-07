@@ -316,48 +316,43 @@ VTAErr vtaDisassemble(
         );
     }
 
-    // * print labels and uops before insn
-    if (numLabels > 0 && uopBuffer != NULL) {
-        for (int i = 0; i < numLabels; ++i) {
-            uint32_t bgn;
-            uint32_t end;
-
-            bgn = labels[i].bgn;
-            end = labels[i].end;
-
-            int label;
-            label = labels[i].labelID;
-
-            APPEND(
-                outBuffer,
-                outBufferSize,
-                &offset,
-                "lbl%d_bgn:\n",
-                label
-            );
-
-            for (uint32_t u = bgn; u < end; ++u) {
-                if (u < (uint32_t)numUop) {
+    if (uopBuffer != NULL) {
+        for (uint32_t u = 0; u <= (uint32_t)numUop; u++) {
+            for (int i = 0; i < numLabels; i++) {
+                if (labels[i].bgn == u) {
                     APPEND(
-                        outBuffer,
-                        outBufferSize,
-                        &offset,
-                        "   %u, %u, %u\n",
-                        uopBuffer[u].dst_idx,
-                        uopBuffer[u].src_idx,
-                        uopBuffer[u].wgt_idx
+                        outBuffer, outBufferSize, &offset,
+                        "lbl%d_bgn:\n",
+                        labels[i].labelID
                     );
                 }
             }
 
+            for (int i = 0; i < numLabels; i++) {
+                if (labels[i].end == u) {
+                    APPEND(
+                        outBuffer, outBufferSize, &offset,
+                        "lbl%d_end:\n",
+                        labels[i].labelID
+                    );
+                }
+            }
+
+            if (u == (uint32_t)numUop)
+                break;
+
             APPEND(
-                outBuffer,
-                outBufferSize,
-                &offset,
-                "lbl%d_end:\n\n",
-                label
+                outBuffer, outBufferSize, &offset,
+                "   %u, %u, %u\n",
+                uopBuffer[u].dst_idx, uopBuffer[u].src_idx, uopBuffer[u].wgt_idx
             );
         }
+
+        if (numUop > 0)
+            APPEND(
+                outBuffer, outBufferSize, &offset,
+                "\n"
+            );
     }
 
     /*
@@ -433,18 +428,28 @@ VTAErr vtaDisassemble(
                         mem->x_size
                     );
                 } else {
-                    APPEND(
-                        outBuffer,
-                        outBufferSize,
-                        &offset,
-                        "LOAD(%s[%u], MEM[%u, %u, %u, %u])\n",
-                        memoryType,
-                        mem->sram_base,
-                        mem->dram_base,
-                        mem->y_size,
-                        mem->x_size,
-                        mem->x_stride
-                    );
+                    int hasPadding;
+                    hasPadding = 
+                        mem->y_pad_0 != 0 ||
+                        mem->y_pad_1 != 0 ||
+                        mem->x_pad_0 != 0 ||
+                        mem->x_pad_1 != 0;
+
+                    if (hasPadding) {
+                        APPEND(
+                            outBuffer, outBufferSize, &offset,
+                            "LOAD(%s[%u], MEM[%u, %u, %u, %u]) "
+                            "PADDING(%u, %u, %u, %u)\n",
+                            memoryType, mem->sram_base, mem->dram_base, mem->y_size, mem->x_size,
+                            mem->x_stride, mem->y_pad_0, mem->y_pad_1, mem->x_pad_0, mem->x_pad_1
+                        );
+                    } else {
+                        APPEND(
+                            outBuffer, outBufferSize, &offset,
+                            "LOAD(%s[%u], MEM[%u, %u, %u, %u])\n",
+                            memoryType, mem->sram_base, mem->dram_base, mem->y_size, mem->x_size, mem->x_stride
+                        );
+                    }
                 }
 
                 status = printPush(
@@ -481,17 +486,29 @@ VTAErr vtaDisassemble(
                 if (status != VTA_OK)
                     goto output_full;
 
-                APPEND(
-                    outBuffer,
-                    outBufferSize,
-                    &offset,
-                    "STOR(MEM[%u, %u, %u, %u], ACC[%u])\n",
-                    mem->dram_base,
-                    mem->y_size,
-                    mem->x_size,
-                    mem->x_stride,
-                    mem->sram_base
-                );
+                int hasPadding;
+
+                hasPadding =
+                    mem->y_pad_0 != 0 ||
+                    mem->y_pad_1 != 0 ||
+                    mem->x_pad_0 != 0 ||
+                    mem->x_pad_1 != 0;
+
+                if (hasPadding) {
+                    APPEND(
+                        outBuffer, outBufferSize, &offset,
+                        "STOR(MEM[%u, %u, %u, %u], ACC[%u]) "
+                        "PADDING(%u, %u, %u, %u)\n",
+                        mem->dram_base, mem->y_size, mem->x_size, mem->x_stride, mem->sram_base,
+                        mem->y_pad_0, mem->y_pad_1, mem->x_pad_0, mem->x_pad_1
+                    );
+                } else {
+                    APPEND(
+                        outBuffer, outBufferSize, &offset,
+                        "STOR(MEM[%u, %u, %u, %u], ACC[%u])\n",
+                        mem->dram_base, mem->y_size, mem->x_size, mem->x_stride, mem->sram_base
+                    );
+                }
 
                 status = printPush(
                     genericInsn,
@@ -536,16 +553,29 @@ VTAErr vtaDisassemble(
                 if (status != VTA_OK)
                     goto output_full;
 
-                APPEND(
-                    outBuffer,
-                    outBufferSize,
-                    &offset,
-                    "FOR (%u, %u) UOP (lbl%d_bgn, lbl%d_end)\n",
-                    alu->iter_out,
-                    alu->iter_in,
-                    currentLabel,
-                    currentLabel
-                );
+                int hasFactors;
+                hasFactors = 
+                    alu->dst_factor_out != 0 ||
+                    alu->dst_factor_in  != 0 ||
+                    alu->src_factor_out != 0 ||
+                    alu->src_factor_in  != 0;
+
+                if (hasFactors)
+                    APPEND(
+                        outBuffer, outBufferSize, &offset,
+                        "FOR (%u, %u) UOP (lbl%d_bgn, lbl%d_end) "
+                        "FACTORS(%u, %u, %u, %u)",
+                        alu->iter_out, alu->iter_in, currentLabel, currentLabel,
+                        alu->dst_factor_out, alu->dst_factor_in, alu->src_factor_out, alu->src_factor_in
+                    );
+                else
+                    APPEND(
+                        outBuffer,
+                        outBufferSize,
+                        &offset,
+                        "FOR (%u, %u) UOP (lbl%d_bgn, lbl%d_end)\n",
+                        alu->iter_out, alu->iter_in, currentLabel, currentLabel
+                    );
 
                 const char *aluMnemonic;
 
@@ -564,6 +594,10 @@ VTAErr vtaDisassemble(
 
                     case VTA_ALU_OPCODE_SHR:
                         aluMnemonic = "ALU.SHR";
+                        break;
+
+                    case VTA_ALU_OPCODE_MUL:
+                        aluMnemonic = "ALU.MUL";
                         break;
 
                     default:
@@ -639,16 +673,31 @@ VTAErr vtaDisassemble(
                 if (status != VTA_OK)
                     goto output_full;
 
-                APPEND(
-                    outBuffer,
-                    outBufferSize,
-                    &offset,
-                    "FOR (%u, %u) UOP (lbl%d_bgn, lbl%d_end)\n",
-                    gemm->iter_out,
-                    gemm->iter_in,
-                    currentLabel,
-                    currentLabel
-                );
+                int hasFactors;
+                hasFactors = 
+                    gemm->dst_factor_out != 0 ||
+                    gemm->dst_factor_in  != 0 ||
+                    gemm->src_factor_out != 0 ||
+                    gemm->src_factor_in  != 0 ||
+                    gemm->wgt_factor_out != 0 ||
+                    gemm->wgt_factor_in  != 0;
+                
+                if (hasFactors) 
+                    APPEND(
+                        outBuffer, outBufferSize, &offset,
+                        "FOR (%u, %u) UOP (lbl%d_bgn, lbl%d_end) "
+                        "FACTORS(%u, %u, %u, %u, %u, %u)\n",
+                        gemm->iter_out, gemm->iter_in, currentLabel, currentLabel,
+                        gemm->dst_factor_out, gemm->dst_factor_in, 
+                        gemm->src_factor_out, gemm->src_factor_in, 
+                        gemm->wgt_factor_out, gemm->wgt_factor_in
+                    );
+                else
+                    APPEND(
+                        outBuffer, outBufferSize, &offset,
+                        "FOR (%u, %u) UOP (lbl%d_bgn, lbl%d_end)\n",
+                        gemm->iter_out, gemm->iter_in, currentLabel, currentLabel
+                    );
 
                 if (gemm->reset_reg) {
                     APPEND(

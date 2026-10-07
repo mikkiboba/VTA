@@ -21,6 +21,22 @@
 
 
 /*!
+ * \brief Number of factors for GEMM operations.
+*/
+#define N_GEMM_FACTORS 6
+
+/*!
+ * \brief Number of factors for ALU operations.
+*/
+#define N_ALU_FACTORS 4
+
+/*!
+ * \brief Number of factors for the MEM padding for VTAMemInsn.
+*/
+#define N_MEM_PADDING_FACTORS 4
+
+
+/*!
  * \brief Token recognised by the assembler.
 */
 typedef enum {
@@ -582,6 +598,80 @@ static VTAErr parseRange(VTAParserContext *ctx, uint32_t *start, uint32_t *end) 
 }
 
 
+static VTAErr parseMemPadding(VTAParserContext *ctx, VTAParsedInsn *parsedInsn) {
+    VTAErr status;
+    status = expectToken(ctx, TOKEN_PUNCTUATION, "(");
+    if (status != VTA_OK)
+        return status;
+    
+    uint32_t values[N_MEM_PADDING_FACTORS];
+
+    for (int i = 0; i < N_MEM_PADDING_FACTORS; i++) {
+        VTAToken token;
+        token = getNextToken(ctx);
+
+        if (token.type != TOKEN_INT)
+            return VTA_ERR_SYNTAX;
+
+        if (token.value < 0) 
+            return VTA_ERR_OUT_OF_RANGE;
+
+        uint64_t maxValue;
+        maxValue = (UINT64_C(1) << VTA_MEMOP_PAD_BIT_WIDTH) - 1;
+
+        if ((uint64_t)token.value > maxValue)
+            return VTA_ERR_OUT_OF_RANGE;
+
+        values[i] = (uint32_t)token.value;
+
+        if (i < N_MEM_PADDING_FACTORS - 1) {
+            status = expectToken(ctx, TOKEN_PUNCTUATION, ",");
+            if (status != VTA_OK)
+                return status;
+        }
+    }
+
+    status = expectToken(ctx, TOKEN_PUNCTUATION, ")");
+    if (status != VTA_OK)
+        return status;
+
+    parsedInsn->data.mem.y_pad_0 = values[0];
+    parsedInsn->data.mem.y_pad_1 = values[1];
+    parsedInsn->data.mem.x_pad_0 = values[2];
+    parsedInsn->data.mem.x_pad_1 = values[3];
+
+    return VTA_OK;
+}
+
+
+static VTAErr parseOptionalMemPadding(VTAParserContext *ctx, VTAParsedInsn *parsedInsn) {
+    VTAToken token;
+    token = peekNextToken(ctx);
+
+    if (
+        token.type == TOKEN_EOL ||
+        token.type == TOKEN_EOF 
+    )
+        return parseInstructionEnd(ctx);
+
+    token = getNextToken(ctx);
+
+    if (
+        token.type != TOKEN_IDENTIFIER ||
+        strcmp(token.text, "PADDING") != 0
+    )
+        return VTA_ERR_SYNTAX;
+
+    VTAErr status;
+    status = parseMemPadding(ctx, parsedInsn);
+
+    if (status != VTA_OK)
+        return status;
+
+    return parseInstructionEnd(ctx);
+}
+
+
 static VTAErr parseLoad(VTAParserContext *ctx, VTAParsedInsn *parsedInsn) {
     memset(parsedInsn, 0, sizeof(*parsedInsn));
 
@@ -717,15 +807,16 @@ static VTAErr parseLoad(VTAParserContext *ctx, VTAParsedInsn *parsedInsn) {
     if (status != VTA_OK)
         return VTA_ERR_SYNTAX;
 
-    return parseInstructionEnd(ctx);
+    return parseOptionalMemPadding(ctx, parsedInsn);
 }
 
 
 static VTAErr parseStore(VTAParserContext *ctx, VTAParsedInsn *parsedInsn) {
     memset(parsedInsn, 0, sizeof(*parsedInsn));
 
-    parsedInsn->kind            = ASM_STORE;
-    parsedInsn->data.mem.opcode = VTA_OPCODE_STORE;
+    parsedInsn->kind                    = ASM_STORE;
+    parsedInsn->data.mem.opcode         = VTA_OPCODE_STORE;
+    parsedInsn->data.mem.memory_type    = VTA_MEM_ID_OUT;
 
     VTAErr status;
 
@@ -823,7 +914,108 @@ static VTAErr parseStore(VTAParserContext *ctx, VTAParsedInsn *parsedInsn) {
     if (status != VTA_OK)
         return status;
 
-    return parseInstructionEnd(ctx);
+    return parseOptionalMemPadding(ctx, parsedInsn);
+}
+
+
+static VTAErr parseGemmFactors(VTAParserContext *ctx, VTAParsedInsn *parsedInsn) {
+    VTAErr status;
+    status = expectToken(ctx, TOKEN_PUNCTUATION, "(");
+    if (status != VTA_OK)
+        return status;
+
+    uint32_t values[N_GEMM_FACTORS];
+    uint32_t widths[N_GEMM_FACTORS] = {
+        VTA_LOG_ACC_BUFF_DEPTH,
+        VTA_LOG_ACC_BUFF_DEPTH,
+        VTA_LOG_INP_BUFF_DEPTH,
+        VTA_LOG_INP_BUFF_DEPTH,
+        VTA_LOG_WGT_BUFF_DEPTH,
+        VTA_LOG_WGT_BUFF_DEPTH,
+    };
+
+    for (int i = 0; i < N_GEMM_FACTORS; i++) {
+        VTAToken token;
+        token = getNextToken(ctx);
+
+        if (token.type != TOKEN_INT)
+            return VTA_ERR_SYNTAX;
+        if (token.value < 0)
+            return VTA_ERR_OUT_OF_RANGE;
+
+        uint64_t maxValue;
+        maxValue = (UINT64_C(1) << widths[i]) - 1;
+
+        if ((uint64_t)token.value > maxValue)
+            return VTA_ERR_OUT_OF_RANGE;
+
+        values[i] = (uint32_t)token.value;
+
+        if (i < N_GEMM_FACTORS - 1) {
+            status = expectToken(ctx, TOKEN_PUNCTUATION, ",");
+            if (status != VTA_OK)
+                return status;
+        }
+    }
+
+    status = expectToken(ctx, TOKEN_PUNCTUATION, ")");
+    if (status != VTA_OK)
+        return status;
+
+    parsedInsn->data.gemm.dst_factor_out = values[0];
+    parsedInsn->data.gemm.dst_factor_in  = values[1];
+    parsedInsn->data.gemm.src_factor_out = values[2];
+    parsedInsn->data.gemm.src_factor_in  = values[3];
+    parsedInsn->data.gemm.wgt_factor_out = values[4];
+    parsedInsn->data.gemm.wgt_factor_in  = values[5];
+
+    return VTA_OK;
+}
+
+
+static VTAErr parseAluFactors(VTAParserContext *ctx, VTAParsedInsn *parsedInsn) {
+    VTAErr status;
+    status = expectToken(ctx, TOKEN_PUNCTUATION, "(");
+    if (status != VTA_OK)
+        return status;
+
+    uint32_t values[N_ALU_FACTORS];
+
+    for (int i = 0; i < N_ALU_FACTORS; i++) {
+        VTAToken token;
+        token = getNextToken(ctx);
+
+        if (token.type != TOKEN_INT)
+            return VTA_ERR_SYNTAX;
+        
+        if (token.value < 0) 
+            return VTA_ERR_OUT_OF_RANGE;
+
+        uint64_t maxValue;
+        maxValue = (UINT64_C(1) << VTA_LOG_ACC_BUFF_DEPTH - 1);
+
+        if ((uint64_t)token.value > maxValue)
+            return VTA_ERR_OUT_OF_RANGE;
+
+        values[i] = (uint32_t)token.value;
+        
+        if (i < N_ALU_FACTORS - 1) {
+            status = expectToken(ctx, TOKEN_PUNCTUATION, ",");
+            if (status != VTA_OK)
+                return status;
+        }
+    }
+
+    status = expectToken(ctx, TOKEN_PUNCTUATION, ")");
+    if (status != VTA_OK)
+        return status;
+
+    parsedInsn->data.alu.dst_factor_out = values[0];
+    parsedInsn->data.alu.dst_factor_in  = values[1];
+    parsedInsn->data.alu.src_factor_out = values[2];
+    parsedInsn->data.alu.src_factor_in  = values[3];
+
+    return VTA_OK;
 }
 
 
@@ -891,6 +1083,32 @@ static VTAErr parseFor(VTAParserContext *ctx, VTAParsedInsn *parsedInsn, int isG
     parsedInsn->uopEndLabel[TEXT_SIZE-1] = '\0';
 
     status = expectToken(ctx, TOKEN_PUNCTUATION, ")");
+    if (status != VTA_OK)
+        return status;
+
+    // * factors part
+    VTAToken nextToken;
+    nextToken = peekNextToken(ctx);
+
+    if (
+        nextToken.type == TOKEN_EOL ||
+        nextToken.type == TOKEN_EOF
+    )
+        return parseInstructionEnd(ctx);
+    
+    nextToken = getNextToken(ctx);
+
+    if (
+        nextToken.type != TOKEN_IDENTIFIER      ||
+        strcmp(nextToken.text, "FACTORS") != 0
+    )
+        return VTA_ERR_SYNTAX;
+
+    if (isGemm)
+        status = parseGemmFactors(ctx, parsedInsn);
+    else
+        status = parseAluFactors(ctx, parsedInsn);
+
     if (status != VTA_OK)
         return status;
 
@@ -1187,6 +1405,11 @@ static VTAErr parseAluOpcode(
         return VTA_OK;
     }
 
+    if (strcmp(text, "ALU.MUL") == 0) {
+        *opcode = VTA_ALU_OPCODE_MUL;
+        return VTA_OK;
+    }
+
     return VTA_ERR_UNKNOWN_MNEMONIC;
 }
 
@@ -1195,7 +1418,8 @@ static int isAluMnemonic(const char *text) {
     return strcmp(text, "ALU.MIN") == 0 ||
            strcmp(text, "ALU.MAX") == 0 ||
            strcmp(text, "ALU.ADD") == 0 ||
-           strcmp(text, "ALU.SHR") == 0;
+           strcmp(text, "ALU.SHR") == 0 ||
+           strcmp(text, "ALU.MUL") == 0 ;
 }
 
 /*!
