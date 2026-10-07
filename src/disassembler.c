@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
-#include <vta/hw_spec.h>
 
 #include "vta.h"
 
