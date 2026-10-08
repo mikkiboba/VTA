@@ -242,6 +242,9 @@ VTAErr vtaDisassemble(
     if (numUop < 0)
         return VTA_ERR_INVALID_INSN_SIZE;
 
+    if ((uint32_t)numUop > VTA_UOP_BUFF_DEPTH)
+        return VTA_ERR_UOP_OUT_OF_BOUNDS;
+
     if (outBufferSize == 0)
         return VTA_ERR_INVALID_INSN_SIZE;
 

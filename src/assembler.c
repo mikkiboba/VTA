@@ -4,6 +4,8 @@
 #include <ctype.h>
 #include <stdint.h>
 
+#include <errno.h>
+
 #include "vta.h"
 
 
@@ -149,7 +151,7 @@ typedef struct {
      * 
      * If `type == TOKEN_INT`, it contains the already converted value.
     */
-    int value;
+    int64_t value;
 } VTAToken;
 
 
@@ -380,18 +382,52 @@ static VTAToken getNextToken(VTAParserContext *ctx) {
     ) {
         token.type = TOKEN_INT;
 
-        int i;
+        int i, tooLong;
         i = 0;
+        tooLong = 0;
 
-        if (*ctx->cursor == '-')
-            token.text[i++] = *ctx->cursor++;
+        if (*ctx->cursor == '-') {
+            if (i < TEXT_SIZE - 1)
+                token.text[i++] = *ctx->cursor;
+            else
+                tooLong = 1;
 
-        while (isdigit((unsigned char)*ctx->cursor) && i < TEXT_SIZE - 1)
-            token.text[i++] = *ctx->cursor++;
+            ctx->cursor++;
+        }
+
+        while (isdigit((unsigned char)*ctx->cursor)) {
+            if (i < TEXT_SIZE - 1)
+                token.text[i++] = *ctx->cursor;
+            else
+                tooLong = 1;
+
+            ctx->cursor++;
+        }
 
         token.text[i] = '\0';
 
-        token.value = atoi(token.text); // ! we could have overflow here
+        if (tooLong) {
+            token.type = TOKEN_ERROR;
+            return token;
+        }
+
+        errno = 0;
+        
+        char *endPtr;
+        long long value;
+        
+        value = strtoll(token.text, &endPtr, 10);
+
+        if (
+            errno == ERANGE ||
+            endPtr == token.text ||
+            *endPtr != '\0'
+        ) {
+            token.type = TOKEN_ERROR;
+            return token;
+        }
+
+        token.value = (int64_t)value;
 
         return token;
     }
@@ -589,7 +625,7 @@ static VTAErr parseRange(VTAParserContext *ctx, uint32_t *start, uint32_t *end) 
 
     if (token.type != TOKEN_INT)
         return VTA_ERR_SYNTAX;
-    if (token.value < 0)
+    if (token.value < 0 || (uint64_t)token.value > UINT32_MAX)
         return VTA_ERR_OUT_OF_RANGE;
     
     *start = (uint32_t)token.value;
@@ -602,7 +638,7 @@ static VTAErr parseRange(VTAParserContext *ctx, uint32_t *start, uint32_t *end) 
 
     if (token.type != TOKEN_INT)
         return VTA_ERR_SYNTAX;
-    if (token.value < 0)
+    if (token.value < 0 || (uint64_t)token.value > UINT32_MAX)
         return VTA_ERR_OUT_OF_RANGE;
     
     *end = (uint32_t)token.value;
@@ -613,6 +649,20 @@ static VTAErr parseRange(VTAParserContext *ctx, uint32_t *start, uint32_t *end) 
     status = expectToken(ctx, TOKEN_PUNCTUATION, "]");
     
     return status;
+}
+
+
+static VTAErr validateUopRange(uint32_t uopBgn, uint32_t uopEnd) {
+    if (uopBgn >= VTA_UOP_BUFF_DEPTH)
+        return VTA_ERR_UOP_OUT_OF_BOUNDS;
+    
+    if (uopEnd > VTA_UOP_BUFF_DEPTH)
+        return VTA_ERR_UOP_OUT_OF_BOUNDS;
+
+    if (uopBgn > uopEnd)
+        return VTA_ERR_UOP_OUT_OF_BOUNDS;
+
+    return VTA_OK;
 }
 
 
@@ -690,37 +740,59 @@ static VTAErr parseOptionalMemPadding(VTAParserContext *ctx, VTAParsedInsn *pars
 }
 
 
-static VTAErr parseLoad(VTAParserContext *ctx, VTAParsedInsn *parsedInsn) {
+static VTAErr parseLoad(
+    VTAParserContext *ctx,
+    VTAParsedInsn *parsedInsn
+) {
     memset(parsedInsn, 0, sizeof(*parsedInsn));
 
-    parsedInsn->kind            = ASM_LOAD;
+    parsedInsn->kind = ASM_LOAD;
     parsedInsn->data.mem.opcode = VTA_OPCODE_LOAD;
+
+    uint64_t maxSram, maxDram, maxSize, maxStride;
+    maxSram     = (UINT64_C(1) << VTA_MEMOP_SRAM_ADDR_BIT_WIDTH) - 1;
+    maxDram     = (UINT64_C(1) << VTA_MEMOP_DRAM_ADDR_BIT_WIDTH) - 1;
+    maxSize     = (UINT64_C(1) << VTA_MEMOP_SIZE_BIT_WIDTH) - 1;
+    maxStride   = (UINT64_C(1) << VTA_MEMOP_STRIDE_BIT_WIDTH) - 1;
 
     VTAErr status;
     status = expectToken(ctx, TOKEN_PUNCTUATION, "(");
+
     if (status != VTA_OK)
         return status;
 
     VTAToken token;
     token = getNextToken(ctx);
 
-    if (token.type != TOKEN_IDENTIFIER) 
+    if (token.type != TOKEN_IDENTIFIER)
         return VTA_ERR_SYNTAX;
-    
+
     if (strcmp(token.text, "UOP") == 0)
         parsedInsn->data.mem.memory_type = VTA_MEM_ID_UOP;
+
     else if (strcmp(token.text, "INP") == 0)
         parsedInsn->data.mem.memory_type = VTA_MEM_ID_INP;
+
     else if (strcmp(token.text, "WGT") == 0)
         parsedInsn->data.mem.memory_type = VTA_MEM_ID_WGT;
+
     else if (strcmp(token.text, "ACC") == 0)
         parsedInsn->data.mem.memory_type = VTA_MEM_ID_ACC;
+
     else if (strcmp(token.text, "ACC_8BIT") == 0)
         parsedInsn->data.mem.memory_type = VTA_MEM_ID_ACC_8BIT;
+
     else
         return VTA_ERR_UNKNOWN_MNEMONIC;
 
+
+    /*
+     * SRAM base.
+     *
+     * LOAD(...[sram_base], ...)
+     */
     status = expectToken(ctx, TOKEN_PUNCTUATION, "[");
+
     if (status != VTA_OK)
         return status;
 
@@ -729,82 +801,108 @@ static VTAErr parseLoad(VTAParserContext *ctx, VTAParsedInsn *parsedInsn) {
     if (token.type != TOKEN_INT)
         return VTA_ERR_SYNTAX;
 
-    if (token.value < 0) 
+    if (
+        token.value < 0 ||
+        (uint64_t)token.value > maxSram
+    )
         return VTA_ERR_OUT_OF_RANGE;
-    
+
     parsedInsn->data.mem.sram_base = (uint32_t)token.value;
 
+
     status = expectToken(ctx, TOKEN_PUNCTUATION, "]");
+
     if (status != VTA_OK)
-        return VTA_ERR_SYNTAX;
-    
+        return status;
+
     status = expectToken(ctx, TOKEN_PUNCTUATION, ",");
+
     if (status != VTA_OK)
         return status;
 
     status = expectToken(ctx, TOKEN_IDENTIFIER, "MEM");
+
     if (status != VTA_OK)
         return status;
 
+
     status = expectToken(ctx, TOKEN_PUNCTUATION, "[");
+
     if (status != VTA_OK)
-        return VTA_ERR_SYNTAX;
+        return status;
 
     token = getNextToken(ctx);
 
     if (token.type != TOKEN_INT)
         return VTA_ERR_SYNTAX;
 
-    if (token.value < 0) 
+    if (
+        token.value < 0 ||
+        (uint64_t)token.value > maxDram
+    )
         return VTA_ERR_OUT_OF_RANGE;
 
     parsedInsn->data.mem.dram_base = (uint32_t)token.value;
 
+    /*
+     * UOP load:
+     *
+     * LOAD(UOP[sram], MEM[dram, x_size])
+     */
     if (parsedInsn->data.mem.memory_type == VTA_MEM_ID_UOP) {
         status = expectToken(ctx, TOKEN_PUNCTUATION, ",");
+
         if (status != VTA_OK)
             return status;
 
         token = getNextToken(ctx);
-        
+
         if (token.type != TOKEN_INT)
             return VTA_ERR_SYNTAX;
-        if (token.value <= 0) 
+
+        if (token.value <= 0 || (uint64_t)token.value > maxSize)
             return VTA_ERR_OUT_OF_RANGE;
-        
+
         parsedInsn->data.mem.x_size = (uint32_t)token.value;
 
+
         status = expectToken(ctx, TOKEN_PUNCTUATION, "]");
+
         if (status != VTA_OK)
             return status;
     } else {
         status = expectToken(ctx, TOKEN_PUNCTUATION, ",");
+
         if (status != VTA_OK)
             return status;
 
         token = getNextToken(ctx);
 
-        if (token.type != TOKEN_INT) 
+        if (token.type != TOKEN_INT)
             return VTA_ERR_SYNTAX;
-        if (token.value <= 0)
+
+        if (token.value <= 0 || (uint64_t)token.value > maxSize)
             return VTA_ERR_OUT_OF_RANGE;
 
         parsedInsn->data.mem.y_size = (uint32_t)token.value;
 
         status = expectToken(ctx, TOKEN_PUNCTUATION, ",");
+
         if (status != VTA_OK)
             return status;
-        
+
         token = getNextToken(ctx);
 
         if (token.type != TOKEN_INT)
             return VTA_ERR_SYNTAX;
-        if (token.value <= 0)
+
+        if (token.value <= 0 || (uint64_t)token.value > maxSize)
             return VTA_ERR_OUT_OF_RANGE;
-        
+
         parsedInsn->data.mem.x_size = (uint32_t)token.value;
 
         status = expectToken(ctx, TOKEN_PUNCTUATION, ",");
+
         if (status != VTA_OK)
             return status;
 
@@ -812,125 +910,158 @@ static VTAErr parseLoad(VTAParserContext *ctx, VTAParsedInsn *parsedInsn) {
 
         if (token.type != TOKEN_INT)
             return VTA_ERR_SYNTAX;
-        if (token.value < 0)
+
+        if (token.value < 0  || (uint64_t)token.value > maxStride)
             return VTA_ERR_OUT_OF_RANGE;
 
         parsedInsn->data.mem.x_stride = (uint32_t)token.value;
-        
-        
+
         status = expectToken(ctx, TOKEN_PUNCTUATION, "]");
+
         if (status != VTA_OK)
             return status;
     }
 
+
     status = expectToken(ctx, TOKEN_PUNCTUATION, ")");
+
     if (status != VTA_OK)
-        return VTA_ERR_SYNTAX;
+        return status;
 
     return parseOptionalMemPadding(ctx, parsedInsn);
 }
 
 
-static VTAErr parseStore(VTAParserContext *ctx, VTAParsedInsn *parsedInsn) {
+static VTAErr parseStore(
+    VTAParserContext *ctx,
+    VTAParsedInsn *parsedInsn
+) {
     memset(parsedInsn, 0, sizeof(*parsedInsn));
 
-    parsedInsn->kind                    = ASM_STORE;
-    parsedInsn->data.mem.opcode         = VTA_OPCODE_STORE;
-    parsedInsn->data.mem.memory_type    = VTA_MEM_ID_OUT;
+    parsedInsn->kind = ASM_STORE;
+    parsedInsn->data.mem.opcode = VTA_OPCODE_STORE;
+    parsedInsn->data.mem.memory_type = VTA_MEM_ID_OUT;
+
+    uint64_t maxSram, maxDram, maxSize, maxStride;
+
+    maxSram     = (UINT64_C(1) << VTA_MEMOP_SRAM_ADDR_BIT_WIDTH) - 1;
+    maxDram     = (UINT64_C(1) << VTA_MEMOP_DRAM_ADDR_BIT_WIDTH) - 1;
+    maxSize     = (UINT64_C(1) << VTA_MEMOP_SIZE_BIT_WIDTH) - 1;
+    maxStride   = (UINT64_C(1) << VTA_MEMOP_STRIDE_BIT_WIDTH) - 1;
 
     VTAErr status;
 
     status = expectToken(ctx, TOKEN_PUNCTUATION, "(");
+
     if (status != VTA_OK)
         return status;
 
+    /*
+     * MEM[dram_base, y_size, x_size, x_stride]
+     */
     status = expectToken(ctx, TOKEN_IDENTIFIER, "MEM");
+
     if (status != VTA_OK)
         return status;
 
     status = expectToken(ctx, TOKEN_PUNCTUATION, "[");
+
     if (status != VTA_OK)
         return status;
 
     VTAToken token;
-    token = getNextToken(ctx); // * dram_base
+    token = getNextToken(ctx);
 
     if (token.type != TOKEN_INT)
         return VTA_ERR_SYNTAX;
-    if (token.value < 0)
+
+    if (token.value < 0 || (uint64_t)token.value > maxDram)
         return VTA_ERR_OUT_OF_RANGE;
 
     parsedInsn->data.mem.dram_base = (uint32_t)token.value;
 
     status = expectToken(ctx, TOKEN_PUNCTUATION, ",");
+
     if (status != VTA_OK)
         return status;
 
-    token = getNextToken(ctx); // * y_size
+    token = getNextToken(ctx);
 
     if (token.type != TOKEN_INT)
         return VTA_ERR_SYNTAX;
-    if (token.value <= 0)
+
+    if (token.value <= 0 || (uint64_t)token.value > maxSize)
         return VTA_ERR_OUT_OF_RANGE;
 
     parsedInsn->data.mem.y_size = (uint32_t)token.value;
 
     status = expectToken(ctx, TOKEN_PUNCTUATION, ",");
+
     if (status != VTA_OK)
         return status;
 
-    token = getNextToken(ctx); // * x_size
-    
+    token = getNextToken(ctx);
+
     if (token.type != TOKEN_INT)
         return VTA_ERR_SYNTAX;
-    if (token.value <= 0)
+
+    if (token.value <= 0 || (uint64_t)token.value > maxSize)
         return VTA_ERR_OUT_OF_RANGE;
-    
+
     parsedInsn->data.mem.x_size = (uint32_t)token.value;
 
     status = expectToken(ctx, TOKEN_PUNCTUATION, ",");
+
     if (status != VTA_OK)
         return status;
-    
-    token = getNextToken(ctx); // * x_stride
+
+    token = getNextToken(ctx);
 
     if (token.type != TOKEN_INT)
         return VTA_ERR_SYNTAX;
-    if (token.value < 0)
+
+    if (token.value < 0 || (uint64_t)token.value > maxStride)
         return VTA_ERR_OUT_OF_RANGE;
 
     parsedInsn->data.mem.x_stride = (uint32_t)token.value;
 
     status = expectToken(ctx, TOKEN_PUNCTUATION, "]");
+
     if (status != VTA_OK)
         return status;
 
     status = expectToken(ctx, TOKEN_PUNCTUATION, ",");
-    if (status != VTA_OK) 
+
+    if (status != VTA_OK)
         return status;
 
     status = expectToken(ctx, TOKEN_IDENTIFIER, "ACC");
+
     if (status != VTA_OK)
         return status;
 
     status = expectToken(ctx, TOKEN_PUNCTUATION, "[");
+
     if (status != VTA_OK)
         return status;
-    
-    token = getNextToken(ctx); // * sram_base
-    
+
+    token = getNextToken(ctx);
+
     if (token.type != TOKEN_INT)
         return VTA_ERR_SYNTAX;
-    if (token.value < 0)
+
+    if (token.value < 0 || (uint64_t)token.value > maxSram)
         return VTA_ERR_OUT_OF_RANGE;
 
     parsedInsn->data.mem.sram_base = (uint32_t)token.value;
 
     status = expectToken(ctx, TOKEN_PUNCTUATION, "]");
+
     if (status != VTA_OK)
         return status;
 
     status = expectToken(ctx, TOKEN_PUNCTUATION, ")");
+
     if (status != VTA_OK)
         return status;
 
@@ -1012,7 +1143,7 @@ static VTAErr parseAluFactors(VTAParserContext *ctx, VTAParsedInsn *parsedInsn) 
             return VTA_ERR_OUT_OF_RANGE;
 
         uint64_t maxValue;
-        maxValue = (UINT64_C(1) << VTA_LOG_ACC_BUFF_DEPTH - 1);
+        maxValue = (UINT64_C(1) << VTA_LOG_ACC_BUFF_DEPTH) - 1;
 
         if ((uint64_t)token.value > maxValue)
             return VTA_ERR_OUT_OF_RANGE;
@@ -1050,6 +1181,12 @@ static VTAErr parseFor(VTAParserContext *ctx, VTAParsedInsn *parsedInsn, int isG
     if (token.type != TOKEN_INT)
         return VTA_ERR_SYNTAX;
     if (token.value <= 0) 
+        return VTA_ERR_OUT_OF_RANGE;
+
+    uint64_t maxIter;
+    maxIter = (UINT64_C(1) << VTA_LOOP_ITER_WIDTH) - 1;
+
+    if ((uint64_t)token.value > maxIter)
         return VTA_ERR_OUT_OF_RANGE;
     
     if (isGemm)
@@ -1187,6 +1324,10 @@ static VTAErr parseGemm(VTAParserContext *ctx, VTAParsedInsn *parsedInsn) {
         return VTA_ERR_SYNTAX;
     }
 
+    status = validateUopRange(accBgn, accEnd);
+    if (status != VTA_OK)
+        return status;
+
     status = expectToken(ctx, TOKEN_PUNCTUATION, ")");
     if (status != VTA_OK)
         return status;
@@ -1214,6 +1355,10 @@ static VTAErr parseGemmRst(VTAParserContext *ctx, VTAParsedInsn *parsedInsn) {
 
     uint32_t uopBgn, uopEnd;
     status = parseRange(ctx, &uopBgn, &uopEnd);
+    if (status != VTA_OK)
+        return status;
+
+    status = validateUopRange(uopBgn, uopEnd);
     if (status != VTA_OK)
         return status;
 
@@ -1255,8 +1400,10 @@ static VTAErr resolveUopLabels(
     if (uopEnd < 0)
         return VTA_ERR_LABEL_NOT_FOUND;
 
-    if (uopBgn > uopEnd)
-        return VTA_ERR_OUT_OF_RANGE;
+    VTAErr status;
+    status = validateUopRange((uint32_t)uopBgn, (uint32_t)uopEnd);
+    if (status != VTA_OK)
+        return status;
 
     if (
         parsedInsn->kind == ASM_GEMM ||
@@ -1295,41 +1442,29 @@ static VTAErr parseAlu(
 ) {
     VTAErr status;
 
-    status = expectToken(
-        ctx,
-        TOKEN_PUNCTUATION,
-        "("
-    );
+    status = expectToken(ctx, TOKEN_PUNCTUATION, "(");
 
     if (status != VTA_OK)
         return status;
 
-    status = expectToken(
-        ctx,
-        TOKEN_IDENTIFIER,
-        "DST"
-    );
+    status = expectToken(ctx, TOKEN_IDENTIFIER, "DST");
 
     if (status != VTA_OK)
         return status;
 
-    uint32_t dstBgn;
-    uint32_t dstEnd;
+    uint32_t dstBgn, dstEnd;
 
-    status = parseRange(
-        ctx,
-        &dstBgn,
-        &dstEnd
-    );
+    status = parseRange(ctx, &dstBgn, &dstEnd);
 
     if (status != VTA_OK)
         return status;
 
-    status = expectToken(
-        ctx,
-        TOKEN_PUNCTUATION,
-        ","
-    );
+    status = validateUopRange(dstBgn, dstEnd);
+
+    if (status != VTA_OK)
+        return status;
+
+    status = expectToken(ctx, TOKEN_PUNCTUATION, ",");
 
     if (status != VTA_OK)
         return status;
@@ -1826,9 +1961,14 @@ static VTAErr makeLT(
 
             currentUopIdx++;
 
+            if (currentUopIdx > VTA_UOP_BUFF_DEPTH) {
+                *errLine = ctx.lineNum;
+                return VTA_ERR_UOP_OUT_OF_BOUNDS;
+            }
+
             if (currentUopIdx > (uint32_t)maxUop) {
                 *errLine = ctx.lineNum;
-                return VTA_ERR_UOP_BUFFER_FULL;
+                return VTA_ERR_UOP_OUT_OF_BOUNDS;
             }
 
             continue;
@@ -2024,6 +2164,9 @@ static VTAErr encodeInstructions(
             return VTA_ERR_SYNTAX;
 
         if (token.type == TOKEN_INT) {
+            if (currentUopIdx >= VTA_UOP_BUFF_DEPTH)
+                return VTA_ERR_UOP_OUT_OF_BOUNDS;
+
             if (currentUopIdx >= (uint32_t)maxUop)
                 return VTA_ERR_UOP_BUFFER_FULL;
 
