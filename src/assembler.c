@@ -565,7 +565,7 @@ static VTAErr parseUopLine(
     uint64_t maxSrc;
     maxSrc = (UINT64_C(1) << VTA_LOG_ACC_BUFF_DEPTH) - 1;
 
-    if ((uint64_t)firstToken.value > maxSrc)
+    if ((uint64_t)token.value > maxSrc)
         return VTA_ERR_OUT_OF_RANGE;    
 
     parsedUop->src_idx = (uint32_t)token.value;
@@ -583,7 +583,7 @@ static VTAErr parseUopLine(
         return VTA_ERR_OUT_OF_RANGE;
 
     uint64_t maxWgt;
-    maxWgt = (UINT64_C(1) << VTA_LOG_ACC_BUFF_DEPTH) - 1;
+    maxWgt = (UINT64_C(1) << VTA_LOG_WGT_BUFF_DEPTH) - 1;
 
     if ((uint64_t)firstToken.value > maxWgt)
         return VTA_ERR_OUT_OF_RANGE;
