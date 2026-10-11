@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
+#include <stdarg.h>
+
 #include <vta/hw_spec.h>
 
 #include "vta.h"
@@ -8,1511 +10,85 @@
 
 #define OUT_BUF_SIZE 2048
 
+#define PASS_CHAR "✔" 
+#define FAIL_CHAR "X"
 
-static void printHeaderA(const char *testName) {
+
+/* ---------
+    HELPER FOR PRINTED OUTPUT
+*/
+
+static void printHeader(
+    const char *label, 
+    const char *testName
+)
+{
     printf("\n----\n");
-    printf(" [ASSEMBLER]: %s", testName);
-    printf("\n----\n");
-}
-
-
-static int test_uopDetection(void) {
-    printHeaderA("1. Check assembler UOP detection.");
-
-    int error;
-    error = 0;
-
-    VTAGenericInsn  insnBuffer[8];
-    VTAUop          uopBuffer[8];
-
-    memset(insnBuffer, 0, sizeof(insnBuffer));
-    memset(uopBuffer, 0, sizeof(uopBuffer));
-
-    const char *asmCode;
-    asmCode =
-        "LOAD(INP[0], MEM[100, 2, 8, 16])\n"
-        "10, 20, 30\n"
-        "FINISH\n";
-
-    int numInsn, numUop;
-    numInsn = 0;
-    numUop  = 0;
-
-    VTAErr status; 
-    status = vtaAssemble(asmCode, insnBuffer, 8, &numInsn, uopBuffer, 8, &numUop);
-
-    if (status != VTA_OK) {
-        printf(" FAIL! vtaAssemble(...) returned status [%d].\n", status);
-        vtaErrorPrint(status, -1);
-        return 1;
-    }
-
-    if (numInsn != 2) {
-        printf(" FAIL! Expected 2 instructions, got %d.\n", numInsn);
-        return 1;
-    }
-
-    if (numUop != 1) {
-        printf(" FAIL! Expected 1 uop, got %d.\n", numUop);
-        return 1;
-    }
-
-    if (error == 0) {
-        printf(" PASS! Uop detection is independent from instruction params.\n");
-    }
-
-    return error;
-}
-
-
-static int test_invalidUop(void) {
-    printHeaderA("2. Check invalid UOP syntax.");
-
-    int error;
-    error = 0;
-
-    VTAGenericInsn  insnBuffer[8];
-    VTAUop          uopBuffer[8];
-
-    memset(insnBuffer, 0, sizeof(insnBuffer));
-    memset(uopBuffer, 0, sizeof(uopBuffer));
-
-    const char *asmCode;
-    asmCode = "10, 20\n";
-
-    int numInsn, numUop;
-    numInsn = 0;
-    numUop  = 0;
-
-    VTAErr status;
-    status = vtaAssemble(asmCode, insnBuffer, 8, &numInsn, uopBuffer, 8, &numUop);
-
-    if (status != VTA_ERR_SYNTAX) {
-        printf(" FAIL! Expected VTA_ERR_SYNTAX (%d), got %d.\n", VTA_ERR_SYNTAX, status);
-        vtaErrorPrint(status, -1);
-        error++;
-    } else {
-        printf(" PASS! Invalid UOP syntax rejected correctly.\n");
-    }
-
-    return error;
-}
-
-
-static int test_assemblerTooManyUopFields(void) {
-    printHeaderA("3. Check UOP with too many fields.");
-
-    int error;
-    error = 0;
-
-    VTAGenericInsn  insnBuffer[8];
-    VTAUop          uopBuffer[8];
-
-    memset(insnBuffer, 0, sizeof(insnBuffer));
-    memset(uopBuffer, 0, sizeof(uopBuffer));
-
-    const char *asmCode;
-    asmCode = "10, 20, 30, 40\n";
-
-    int numInsn, numUop;
-    numInsn = 0;
-    numUop  = 0;
-
-    VTAErr status;
-    status = vtaAssemble(asmCode, insnBuffer, 8, &numInsn, uopBuffer, 8, &numUop);
-
-    if (status != VTA_ERR_SYNTAX) {
-        printf(" FAIL! Expected VTA_ERR_SYNTAX (%d), got %d.\n", VTA_ERR_SYNTAX, status);
-        vtaErrorPrint(status, -1);
-        error++;
-    } else {
-        printf(" PASS! Extra UOP field rejected correctly.\n");
-    }
-
-    return error;
-}
-
-
-static int test_simpleInstructions(void)
-{
-    printHeaderA("4. Check FINISH and NOOP parsing.");
-
-    int error = 0;
-
-    VTAGenericInsn insnBuffer[8];
-    VTAUop uopBuffer[8];
-
-    memset(insnBuffer, 0, sizeof(insnBuffer));
-    memset(uopBuffer, 0, sizeof(uopBuffer));
-
-    const char *asmCode =
-        "FINISH\n"
-        "NOOP\n";
-
-    int numInsn = 0;
-    int numUop = 0;
-
-    VTAErr status = vtaAssemble(asmCode, insnBuffer, 8, &numInsn, uopBuffer, 8, &numUop);
-
-    if (status != VTA_OK) {
-        printf(" FAIL! vtaAssemble returned status [%d].\n", status);
-        vtaErrorPrint(status, -1);
-        return 1;
-    }
-
-    if (numInsn != 2) {
-        printf(" FAIL! Expected 2 instructions, got %d.\n", numInsn);
-        error++;
-    }
-
-    if (numUop != 0) {
-        printf(" FAIL! Expected 0 UOPs, got %d.\n", numUop);
-        error++;
-    }
-
-    if (error == 0)
-        printf(" PASS! FINISH and NOOP parsed correctly.\n");
-
-    return error;
-}
-
-
-static int test_invalidSimpleInstruction(void)
-{
-    printHeaderA("5. Check invalid FINISH/NOOP syntax.");
-
-    int error = 0;
-
-    VTAGenericInsn insnBuffer[8];
-    VTAUop uopBuffer[8];
-
-    memset(insnBuffer, 0, sizeof(insnBuffer));
-    memset(uopBuffer, 0, sizeof(uopBuffer));
-
-    const char *asmCode =
-        "FINISH(123)\n";
-
-    int numInsn = 0;
-    int numUop = 0;
-
-    VTAErr status = vtaAssemble(asmCode, insnBuffer, 8, &numInsn, uopBuffer, 8, &numUop);
-
-    if (status != VTA_ERR_SYNTAX) {
-        printf(" FAIL! Expected VTA_ERR_SYNTAX (%d), got %d.\n", VTA_ERR_SYNTAX, status);
-        vtaErrorPrint(status, -1);
-        error++;
-    }
-    else {
-        printf(" PASS! Invalid FINISH syntax rejected correctly.\n\n");
-    }
-
-    return error;
-}
-
-
-static int test_loadParsing(void)
-{
-    printHeaderA("6. Check LOAD parsing.");
-
-    int error = 0;
-
-    VTAGenericInsn insnBuffer[8];
-    VTAUop uopBuffer[8];
-
-    memset(insnBuffer, 0, sizeof(insnBuffer));
-    memset(uopBuffer, 0, sizeof(uopBuffer));
-
-    const char *asmCode =
-        "LOAD(INP[4], MEM[100, 2, 8, 16])\n";
-
-    int numInsn = 0;
-    int numUop = 0;
-
-    VTAErr status;
-    status = vtaAssemble(asmCode, insnBuffer, 8, &numInsn, uopBuffer, 8, &numUop);
-
-    if (status != VTA_OK) {
-        printf(" FAIL! LOAD returned status [%d].\n", status);
-        vtaErrorPrint(status, -1);
-
-        return 1;
-    }
-
-    if (numInsn != 1) {
-        printf(" FAIL! Expected 1 instruction, got %d.\n", numInsn);
-        error++;
-    }
-
-    if (numUop != 0) {
-        printf(" FAIL! Expected 0 UOPs, got %d.\n", numUop);
-        error++;
-    }
-
-    if (error == 0) {
-        printf(" PASS! LOAD syntax parsed correctly.\n\n");
-    }
-
-    return error;
-}
-
-
-static int test_invalidLoadMemoryType(void)
-{
-    printHeaderA("7. Check invalid LOAD memory type.");
-
-    VTAGenericInsn insnBuffer[8];
-    VTAUop uopBuffer[8];
-
-    memset(insnBuffer, 0, sizeof(insnBuffer));
-    memset(uopBuffer, 0, sizeof(uopBuffer));
-
-    const char *asmCode =
-        "LOAD(XYZ[0], MEM[100, 2, 8, 16])\n";
-
-    int numInsn = 0;
-    int numUop = 0;
-
-    VTAErr status;
-    status = vtaAssemble(asmCode, insnBuffer, 8, &numInsn, uopBuffer, 8, &numUop);
-
-    if (status != VTA_ERR_UNKNOWN_MNEMONIC) {
-        printf(" FAIL! Expected VTA_ERR_UNKNOWN_MNEMONIC (%d), got %d.\n", VTA_ERR_UNKNOWN_MNEMONIC, status);
-        vtaErrorPrint(status, -1);
-
-        return 1;
-    }
-
-    printf(" PASS! Invalid LOAD memory type rejected correctly.\n\n");
-
-    return 0;
-}
-
-
-static int test_invalidLoadArguments(void)
-{
-    printHeaderA("8. Check invalid LOAD arguments.");
-
-    VTAGenericInsn insnBuffer[8];
-    VTAUop uopBuffer[8];
-
-    memset(insnBuffer, 0, sizeof(insnBuffer));
-    memset(uopBuffer, 0, sizeof(uopBuffer));
-
-    const char *asmCode =
-        "LOAD(INP[0], MEM[100, 8])\n";
-
-    int numInsn = 0;
-    int numUop = 0;
-
-    VTAErr status;
-    status = vtaAssemble(asmCode, insnBuffer, 8, &numInsn, uopBuffer, 8, &numUop);
-
-    if (status != VTA_ERR_SYNTAX) {
-        printf(" FAIL! Expected VTA_ERR_SYNTAX (%d), got %d.\n", VTA_ERR_SYNTAX, status);
-        vtaErrorPrint(status, -1);
-
-        return 1;
-    }
-
-    printf(" PASS! Invalid LOAD arguments rejected correctly.\n\n");
-
-    return 0;
-}
-
-
-static int test_loadEncoding(void) {
-    printHeaderA("9. Check LOAD binary encoding.");
-
-    int error;
-    error = 0;
-
-    VTAGenericInsn  insnBuffer[8];
-    memset(insnBuffer, 0, sizeof(insnBuffer));
-
-    VTAUop uopBuffer[8];
-    memset(uopBuffer, 0, sizeof(uopBuffer));
-
-    const char *asmCode;
-    asmCode = "LOAD(INP[4], MEM[100, 2, 8, 16])\n";
-
-    int numInsn, numUop;
-    numInsn = 0;
-    numUop  = 0;
-
-    VTAErr status;
-    status = vtaAssemble(asmCode, insnBuffer, 8, &numInsn, uopBuffer, 8, &numUop);
-
-    if (status != VTA_OK) {
-        printf(" FAIL! vtaAssemble(...) returned status [%d].\n", status);
-        vtaErrorPrint(status, -1);
-        return 1;
-    }
-
-    if (numInsn != 1) {
-        printf(" FAIL! Expected 1 instruction, got %d.\n", numInsn);
-        error++;
-    }
-
-    if (numUop != 0) {
-        printf(" FAIL! Expected 0 UOPs, got %d.\n", numUop);
-        error++;
-    }
-
-    VTAMemInsn *insn;
-    insn = (VTAMemInsn *)&insnBuffer[0];
-
-    if (insn->opcode != VTA_OPCODE_LOAD) {
-        printf(" FAIL! Wrong opcode: got %u.\n", (unsigned)insn->opcode);
-        error++;
-    }
-
-    if (insn->memory_type != VTA_MEM_ID_INP) {
-        printf(" FAIL! Wrong memory type, got %u.\n", (unsigned)insn->memory_type);
-        error++;
-    }
-
-    if (insn->sram_base != 4) {
-        printf(" FAIL! Wrong sram_base, got %u.\n", (unsigned)insn->sram_base);
-        error++;
-    }
-
-    if (insn->dram_base != 100) {
-        printf(" FAIL! Wrong dram_base: got %u.\n", (unsigned)insn->dram_base);
-        error++;
-    }
-
-    if (insn->y_size != 2) {
-        printf(" FAIL! Wrong y_size: got %u.\n", (unsigned)insn->y_size);
-        error++;
-    }
-
-    if (insn->x_size != 8) {
-        printf(" FAIL! Wrong x_size: got %u.\n", (unsigned)insn->x_size);
-        error++;
-    }
-
-    if (insn->x_stride != 16) {
-        printf(" FAIL! Wrong x_stride: got %u.\n", (unsigned)insn->x_stride);
-        error++;
-    }
-
-    if (error == 0)
-        printf(" PASS! LOAD fields encoded correctly.\n");
-
-    return error;
-}
-
-
-static int test_uopEncoding(void)
-{
-    printHeaderA("10. Check UOP binary encoding.");
-
-    int error;
-    error = 0;
-
-    VTAGenericInsn insnBuffer[8];
-    VTAUop uopBuffer[8];
-
-    memset(insnBuffer, 0, sizeof(insnBuffer));
-    memset(uopBuffer, 0, sizeof(uopBuffer));
-
-    const char *asmCode =
-        "10, 20, 30\n"
-        "11, 21, 31\n";
-
-    int numInsn = 0;
-    int numUop = 0;
-
-    VTAErr status;
-
-    status = vtaAssemble(asmCode, insnBuffer, 8, &numInsn, uopBuffer, 8, &numUop);
-
-    if (status != VTA_OK) {
-        printf(" FAIL! vtaAssemble returned status [%d].\n", status);
-        vtaErrorPrint(status, -1);
-        return 1;
-    }
-
-    if (numInsn != 0) {
-        printf(" FAIL! Expected 0 instructions, got %d.\n", numInsn);
-        error++;
-    }
-
-    if (numUop != 2) {
-        printf(" FAIL! Expected 2 UOPs, got %d.\n", numUop);
-        error++;
-    }
-
-    if (uopBuffer[0].dst_idx != 10) {
-        printf(" FAIL! UOP[0] wrong dst_idx: got %u.\n", (unsigned)uopBuffer[0].dst_idx);
-        error++;
-    }
-
-    if (uopBuffer[0].src_idx != 20) {
-        printf(" FAIL! UOP[0] wrong src_idx: got %u.\n", (unsigned)uopBuffer[0].src_idx);
-        error++;
-    }
-
-    if (uopBuffer[0].wgt_idx != 30) {
-        printf(" FAIL! UOP[0] wrong wgt_idx: got %u.\n", (unsigned)uopBuffer[0].wgt_idx);
-        error++;
-    }
-
-    if (uopBuffer[1].dst_idx != 11) {
-        printf(" FAIL! UOP[1] wrong dst_idx: got %u.\n", (unsigned)uopBuffer[1].dst_idx);
-        error++;
-    }
-
-    if (uopBuffer[1].src_idx != 21) {
-        printf(" FAIL! UOP[1] wrong src_idx: got %u.\n", (unsigned)uopBuffer[1].src_idx);
-        error++;
-    }
-
-    if (uopBuffer[1].wgt_idx != 31) {
-        printf(" FAIL! UOP[1] wrong wgt_idx: got %u.\n", (unsigned)uopBuffer[1].wgt_idx);
-        error++;
-    }
-
-    if (error == 0)
-        printf(" PASS! UOP fields encoded correctly.\n");
-
-    return error;
-}
-
-
-static int test_storeEncoding(void)
-{
-    printHeaderA("11. Check STORE binary encoding.");
-
-    int error = 0;
-
-    VTAGenericInsn insnBuffer[8];
-    VTAUop uopBuffer[8];
-
-    memset(insnBuffer, 0, sizeof(insnBuffer));
-    memset(uopBuffer, 0, sizeof(uopBuffer));
-
-    const char *asmCode =
-        "STORE(MEM[200, 2, 8, 16], ACC[5])\n";
-
-    int numInsn = 0;
-    int numUop = 0;
-
-    VTAErr status;
-
-    status = vtaAssemble(asmCode, insnBuffer, 8, &numInsn, uopBuffer, 8, &numUop);
-
-    if (status != VTA_OK) {
-        printf(" FAIL! vtaAssemble returned status [%d].\n", status);
-        vtaErrorPrint(status, -1);
-        return 1;
-    }
-
-    if (numInsn != 1) {
-        printf(" FAIL! Expected 1 instruction, got %d.\n", numInsn);
-        error++;
-    }
-
-    if (numUop != 0) {
-        printf(" FAIL! Expected 0 UOPs, got %d.\n", numUop);
-        error++;
-    }
-
-    VTAMemInsn *insn;
-    insn = (VTAMemInsn *)&insnBuffer[0];
-
-    if (insn->opcode != VTA_OPCODE_STORE) {
-        printf(" FAIL! Wrong opcode: got %u.\n", (unsigned)insn->opcode);
-        error++;
-    }
-
-    if (insn->sram_base != 5) {
-        printf(" FAIL! Wrong sram_base: got %u.\n", (unsigned)insn->sram_base);
-        error++;
-    }
-
-    if (insn->dram_base != 200) {
-        printf(" FAIL! Wrong dram_base: got %u.\n", (unsigned)insn->dram_base);
-        error++;
-    }
-
-    if (insn->y_size != 2) {
-        printf(" FAIL! Wrong y_size: got %u.\n", (unsigned)insn->y_size);
-        error++;
-    }
-
-    if (insn->x_size != 8) {
-        printf(" FAIL! Wrong x_size: got %u.\n", (unsigned)insn->x_size);
-        error++;
-    }
-
-    if (insn->x_stride != 16) {
-        printf(" FAIL! Wrong x_stride: got %u.\n", (unsigned)insn->x_stride);
-        error++;
-    }
-
-    if (error == 0)
-        printf(" PASS! STORE fields encoded correctly.\n");
-
-    return error;
-}
-
-
-static int test_gemmEnconding(void) {
-    printHeaderA("12. Check GEMM binary encoding.");
-
-    int error;
-    error = 0;
-
-    VTAGenericInsn  insnBuffer[8];
-    memset(insnBuffer, 0, sizeof(insnBuffer));
-
-    VTAUop uopBuffer[8];
-    memset(uopBuffer, 0, sizeof(uopBuffer));
-
-    const char *asmCode =
-        "lbl1_bgn:\n"
-        "10, 20, 30\n"
-        "11, 21, 31\n"
-        "12, 22, 32\n"
-        "lbl1_end:\n"
-        "FOR (2, 4) UOP (lbl1_bgn, lbl1_end)\n"
-        "GEMM(ACC[0:3], INP[0:3], WGT[0:3])\n";
-
-    int numInsn, numUop;
-    numInsn = 0;
-    numUop  = 0;
-
-    VTAErr status;
-    status = vtaAssemble(asmCode, insnBuffer, 8, &numInsn, uopBuffer, 8, &numUop);
-    if (status != VTA_OK) {
-        printf(" FAIL! vtaAssemble returned status [%d].\n", status);
-        vtaErrorPrint(status, -1);
-        return 1;
-    }
-
-    if (numInsn < 1) {
-        printf(" FAIL! Expected 1 instruction, got %d.\n", numInsn);
-        error++;
-    }
-
-    if (numUop != 3) {
-        printf(" FAIL! Expected 3 UOPs, got %d.\n", numUop);
-        error++;
-    }
-
-    VTAGemInsn *insn;
-    insn = (VTAGemInsn *)&insnBuffer[0];
-
-    if (insn->opcode != VTA_OPCODE_GEMM) {
-        printf(" FAIL! Wrong opcode: got %d.\n", (unsigned)insn->opcode);
-        error++;
-    }
-
-    if (insn->uop_bgn != 0) {
-        printf(" FAIL! Wrong uop_bgn: got %d.\n", (unsigned)insn->uop_bgn);
-        error++;
-    }
-
-    if (insn->uop_end != 3) {
-        printf(" FAIL! Wrong uop_end: got %u.\n", (unsigned)insn->uop_end);
-        error++;
-    }
-
-    if (insn->iter_out != 2) {
-        printf(" FAIL! Wrong iter_out: got %u.\n", (unsigned)insn->iter_out);
-        error++;
-    }
-
-    if (insn->iter_in != 4) {
-        printf(" FAIL! Wrong iter_in: got %u.\n", (unsigned)insn->iter_in);
-        error++;
-    }
-
-    if (insn->reset_reg != 0) {
-        printf(" FAIL! Wrong reset_reg: got %u.\n", (unsigned)insn->reset_reg);
-        error++;
-    }
-
-    if (error == 0)
-        printf(" PASS! GEMM fields encoded correctly.\n");
-
-    return error;
-
-
-
-
-}
-
-
-static int test_gemmLabelResolution(void)
-{
-    printHeaderA("13. Check GEMM label resolution.");
-
-    int error = 0;
-
-    VTAGenericInsn insnBuffer[8];
-    memset(insnBuffer, 0, sizeof(insnBuffer));
-
-    VTAUop uopBuffer[8];
-    memset(uopBuffer, 0, sizeof(uopBuffer));
-
-    const char *asmCode;
-    asmCode =
-        "lbl1_bgn:\n"
-        "10, 20, 30\n"
-        "11, 21, 31\n"
-        "12, 22, 32\n"
-        "lbl1_end:\n"
-        "FOR (2, 4) UOP (lbl1_bgn, lbl1_end)\n"
-        "GEMM(ACC[0:3], INP[0:3], WGT[0:3])\n";
-
-    int numInsn, numUop;
-    numInsn = 0;
-    numUop  = 0;
-
-    VTAErr status;
-
-    status = vtaAssemble(asmCode, insnBuffer, 8, &numInsn, uopBuffer, 8, &numUop);
-
-    if (status != VTA_OK) {
-        printf(" FAIL! vtaAssemble returned status [%d].\n", status);
-        vtaErrorPrint(status, -1);
-        return 1;
-    }
-
-    if (numInsn != 1) {
-        printf(" FAIL! Expected 1 instruction, got %d.\n", numInsn);
-        error++;
-    }
-
-    if (numUop != 3) {
-        printf(" FAIL! Expected 3 UOPs, got %d.\n", numUop);
-        error++;
-    }
-
-    VTAGemInsn *insn;
-    insn = (VTAGemInsn *)&insnBuffer[0];
-
-    if (insn->opcode != VTA_OPCODE_GEMM) {
-        printf(" FAIL! Wrong opcode: got %u.\n", (unsigned)insn->opcode);
-        error++;
-    }
-
-    if (insn->uop_bgn != 0) {
-        printf(" FAIL! Expected uop_bgn = 0, got %u.\n", (unsigned)insn->uop_bgn);
-        error++;
-    }
-
-    if (insn->uop_end != 3) {
-        printf(" FAIL! Expected uop_end = 3, got %u.\n", (unsigned)insn->uop_end);
-        error++;
-    }
-
-    if (insn->iter_out != 2) {
-        printf(" FAIL! Expected iter_out = 2, got %u.\n", (unsigned)insn->iter_out);
-        error++;
-    }
-
-    if (insn->iter_in != 4) {
-        printf(" FAIL! Expected iter_in = 4, got %u.\n", (unsigned)insn->iter_in);
-        error++;
-    }
-
-    if (error == 0)
-        printf(" PASS! GEMM labels resolved correctly.\n");
-
-    return error;
-}
-
-
-static int test_gemmRstEncoding(void)
-{
-    printHeaderA("14. Check GEMM.RST binary encoding.");
-
-    int error;
-    error = 0;
-
-    VTAGenericInsn insnBuffer[8];
-    memset(insnBuffer, 0, sizeof(insnBuffer));
-
-    VTAUop uopBuffer[8];
-    memset(uopBuffer, 0, sizeof(uopBuffer));
-
-    const char *asmCode;
-    asmCode =
-        "lbl1_bgn:\n"
-        "10, 20, 30\n"
-        "11, 21, 31\n"
-        "12, 22, 32\n"
-        "lbl1_end:\n"
-        "FOR (1, 6) UOP (lbl1_bgn, lbl1_end)\n"
-        "GEMM.RST(ACC[0:3])\n";
-
-    int numInsn, numUop;
-    numInsn = 0;
-    numUop  = 0;
-
-    VTAErr status;
-
-    status = vtaAssemble(asmCode, insnBuffer, 8, &numInsn, uopBuffer, 8, &numUop);
-
-    if (status != VTA_OK) {
-        printf(" FAIL! vtaAssemble returned status [%d].\n", status);
-        vtaErrorPrint(status, -1);
-        return 1;
-    }
-
-    if (numInsn != 1) {
-        printf(" FAIL! Expected 1 instruction, got %d.\n", numInsn);
-        error++;
-    }
-
-    if (numUop != 3) {
-        printf(" FAIL! Expected 3 UOPs, got %d.\n", numUop);
-        error++;
-    }
-
-    VTAGemInsn *insn;
-    insn = (VTAGemInsn *)&insnBuffer[0];
-
-    if (insn->opcode != VTA_OPCODE_GEMM) {
-        printf(" FAIL! Wrong opcode: got %u.\n", (unsigned)insn->opcode);
-        error++;
-    }
-
-    if (insn->reset_reg != 1) {
-        printf(" FAIL! Expected reset_reg = 1, got %u.\n", (unsigned)insn->reset_reg);
-        error++;
-    }
-
-    if (insn->uop_bgn != 0) {
-        printf(" FAIL! Expected uop_bgn = 0, got %u.\n", (unsigned)insn->uop_bgn);
-        error++;
-    }
-
-    if (insn->uop_end != 3) {
-        printf(" FAIL! Expected uop_end = 3, got %u.\n", (unsigned)insn->uop_end);
-        error++;
-    }
-
-    if (insn->iter_out != 1) {
-        printf(" FAIL! Expected iter_out = 1, got %u.\n", (unsigned)insn->iter_out);
-        error++;
-    }
-
-    if (insn->iter_in != 6) {
-        printf(" FAIL! Expected iter_in = 6, got %u.\n", (unsigned)insn->iter_in);
-        error++;
-    }
-
-    if (error == 0)
-        printf(" PASS! GEMM.RST fields encoded correctly.\n");
-
-    return error;
-}
-
-
-static int test_aluEncoding(void)
-{
-    printHeaderA("15. Check ALU binary encoding.");
-
-    int error = 0;
-
-    const char *opNames[] = {
-        "ALU.MIN",
-        "ALU.MAX",
-        "ALU.ADD",
-        "ALU.SHR"
-    };
-
-    uint32_t expectedOpcodes[] = {
-        VTA_ALU_OPCODE_MIN,
-        VTA_ALU_OPCODE_MAX,
-        VTA_ALU_OPCODE_ADD,
-        VTA_ALU_OPCODE_SHR
-    };
-
-    for (int i = 0; i < 4; i++) {
-        VTAGenericInsn insnBuffer[8];
-        VTAUop uopBuffer[8];
-        memset(insnBuffer, 0, sizeof(insnBuffer));
-        memset(uopBuffer, 0, sizeof(uopBuffer));
-
-        char asmCode[256];
-        snprintf(
-            asmCode,
-            sizeof(asmCode),
-            "lbl1_bgn:\n"
-            "10, 20, 30\n"
-            "11, 21, 31\n"
-            "12, 22, 32\n"
-            "lbl1_end:\n"
-            "FOR (3, 5) UOP (lbl1_bgn, lbl1_end)\n"
-            "%s(DST[0:3], -7)\n",
-            opNames[i]
-        );
-
-        int numInsn = 0;
-        int numUop = 0;
-
-        VTAErr status = vtaAssemble(
-            asmCode,
-            insnBuffer,
-            8,
-            &numInsn,
-            uopBuffer,
-            8,
-            &numUop
-        );
-
-        if (status != VTA_OK) {
-            printf(" FAIL! %s returned status [%d].\n", opNames[i], status);
-            vtaErrorPrint(status, -1);
-            error++;
-            continue;
-        }
-
-        VTAAluInsn *insn = (VTAAluInsn *)&insnBuffer[0];
-
-        if (numInsn != 1) {
-            printf(" FAIL! %s: expected 1 instruction, got %d.\n", opNames[i], numInsn);
-            error++;
-        }
-
-        if (numUop != 3) {
-            printf(" FAIL! %s: expected 3 UOPs, got %d.\n", opNames[i], numUop);
-            error++;
-        }
-
-        if (insn->opcode != VTA_OPCODE_ALU) {
-            printf(" FAIL! %s: wrong opcode: got %u.\n", opNames[i], (unsigned)insn->opcode);
-            error++;
-        }
-
-        if (insn->alu_opcode != expectedOpcodes[i]) {
-            printf(
-                " FAIL! %s: wrong ALU opcode: got %u, expected %u.\n",
-                opNames[i],
-                (unsigned)insn->alu_opcode,
-                (unsigned)expectedOpcodes[i]
-            );
-            error++;
-        }
-
-        if (insn->uop_bgn != 0 || insn->uop_end != 3) {
-            printf(
-                " FAIL! %s: wrong UOP range [%u:%u].\n",
-                opNames[i],
-                (unsigned)insn->uop_bgn,
-                (unsigned)insn->uop_end
-            );
-            error++;
-        }
-
-        if (insn->iter_out != 3 || insn->iter_in != 5) {
-            printf(
-                " FAIL! %s: wrong iterators (%u, %u).\n",
-                opNames[i],
-                (unsigned)insn->iter_out,
-                (unsigned)insn->iter_in
-            );
-            error++;
-        }
-
-        if (insn->reset_reg != 0) {
-            printf(" FAIL! %s: reset_reg should be 0, got %u.\n", opNames[i], (unsigned)insn->reset_reg);
-            error++;
-        }
-
-        if (insn->use_imm != 1) {
-            printf(" FAIL! %s: expected immediate mode.\n", opNames[i]);
-            error++;
-        }
-
-        if (insn->imm != -7) {
-            printf(" FAIL! %s: wrong immediate: got %d.\n", opNames[i], (int)insn->imm);
-            error++;
-        }
-    }
-
-    if (error == 0)
-        printf(" PASS! All ALU opcodes encoded correctly.\n");
-
-    return error;
-}
-
-
-static int test_aluSrcEncoding(void)
-{
-    printHeaderA("16. Check ALU SRC encoding.");
-
-    int error = 0;
-
-    VTAGenericInsn insnBuffer[8];
-    VTAUop uopBuffer[8];
-    memset(insnBuffer, 0, sizeof(insnBuffer));
-    memset(uopBuffer, 0, sizeof(uopBuffer));
-
-    const char *asmCode =
-        "lbl1_bgn:\n"
-        "10, 20, 30\n"
-        "11, 21, 31\n"
-        "12, 22, 32\n"
-        "lbl1_end:\n"
-        "FOR (2, 4) UOP (lbl1_bgn, lbl1_end)\n"
-        "ALU.ADD(DST[0:3], SRC[0:3])\n";
-
-    int numInsn = 0;
-    int numUop = 0;
-
-    VTAErr status = vtaAssemble(
-        asmCode,
-        insnBuffer,
-        8,
-        &numInsn,
-        uopBuffer,
-        8,
-        &numUop
-    );
-
-    if (status != VTA_OK) {
-        printf(" FAIL! ALU.ADD SRC returned status [%d].\n", status);
-        vtaErrorPrint(status, -1);
-        return 1;
-    }
-
-    VTAAluInsn *insn = (VTAAluInsn *)&insnBuffer[0];
-
-    if (numInsn != 1) {
-        printf(" FAIL! Expected 1 instruction, got %d.\n", numInsn);
-        error++;
-    }
-
-    if (numUop != 3) {
-        printf(" FAIL! Expected 3 UOPs, got %d.\n", numUop);
-        error++;
-    }
-
-    if (insn->opcode != VTA_OPCODE_ALU) {
-        printf(" FAIL! Wrong opcode: got %u.\n", (unsigned)insn->opcode);
-        error++;
-    }
-
-    if (insn->alu_opcode != VTA_ALU_OPCODE_ADD) {
-        printf(" FAIL! Wrong ALU opcode: got %u.\n", (unsigned)insn->alu_opcode);
-        error++;
-    }
-
-    if (insn->uop_bgn != 0 || insn->uop_end != 3) {
-        printf(
-            " FAIL! Wrong UOP range [%u:%u].\n",
-            (unsigned)insn->uop_bgn,
-            (unsigned)insn->uop_end
-        );
-        error++;
-    }
-
-    if (insn->iter_out != 2 || insn->iter_in != 4) {
-        printf(
-            " FAIL! Wrong iterators (%u, %u).\n",
-            (unsigned)insn->iter_out,
-            (unsigned)insn->iter_in
-        );
-        error++;
-    }
-
-    if (insn->use_imm != 0) {
-        printf(" FAIL! Expected SRC mode, but use_imm is %u.\n", (unsigned)insn->use_imm);
-        error++;
-    }
-
-    if (error == 0)
-        printf(" PASS! ALU SRC fields encoded correctly.\n");
-
-    return error;
-}
-
-
-static int test_dependencyEncoding(void)
-{
-    printHeaderA("17. Check POP/PUSH dependency encoding.");
-
-    int error = 0;
-
-    VTAGenericInsn insnBuffer[8];
-    VTAUop uopBuffer[8];
-
-    /*
-     * 17.1 LOAD
-     *
-     * POP  EX->LD  -> pop_prev_dep
-     * PUSH LD->EX  -> push_prev_dep
-     */
-    memset(insnBuffer, 0, sizeof(insnBuffer));
-    memset(uopBuffer, 0, sizeof(uopBuffer));
-
-    const char *loadCode =
-        "POP (EX->LD)\n"
-        "LOAD(INP[4], MEM[100, 2, 8, 16])\n"
-        "PUSH (LD->EX)\n";
-
-    int numInsn = 0;
-    int numUop = 0;
-
-    VTAErr status;
-    status = vtaAssemble(
-        loadCode,
-        insnBuffer,
-        8,
-        &numInsn,
-        uopBuffer,
-        8,
-        &numUop
-    );
-
-    if (status != VTA_OK) {
-        printf(" FAIL! LOAD dependency encoding returned %d.\n", status);
-        vtaErrorPrint(status, -1);
-        return 1;
-    }
-
-    VTAMemInsn *load;
-    load = (VTAMemInsn *)&insnBuffer[0];
-
-    if (load->pop_prev_dep != 1) {
-        printf(" FAIL! LOAD pop_prev_dep expected 1, got %u.\n",
-               (unsigned)load->pop_prev_dep);
-        error++;
-    }
-
-    if (load->pop_next_dep != 0) {
-        printf(" FAIL! LOAD pop_next_dep expected 0, got %u.\n",
-               (unsigned)load->pop_next_dep);
-        error++;
-    }
-
-    if (load->push_prev_dep != 1) {
-        printf(" FAIL! LOAD push_prev_dep expected 1, got %u.\n",
-               (unsigned)load->push_prev_dep);
-        error++;
-    }
-
-    if (load->push_next_dep != 0) {
-        printf(" FAIL! LOAD push_next_dep expected 0, got %u.\n",
-               (unsigned)load->push_next_dep);
-        error++;
-    }
-
-    /*
-     * 17.2 STORE
-     *
-     * POP  EX->ST  -> pop_prev_dep
-     * PUSH ST->EX  -> push_prev_dep
-     */
-    memset(insnBuffer, 0, sizeof(insnBuffer));
-    memset(uopBuffer, 0, sizeof(uopBuffer));
-
-    const char *storeCode =
-        "POP (EX->ST)\n"
-        "STORE(MEM[200, 2, 8, 16], ACC[5])\n"
-        "PUSH (ST->EX)\n";
-
-    numInsn = 0;
-    numUop = 0;
-
-    status = vtaAssemble(
-        storeCode,
-        insnBuffer,
-        8,
-        &numInsn,
-        uopBuffer,
-        8,
-        &numUop
-    );
-
-    if (status != VTA_OK) {
-        printf(" FAIL! STORE dependency encoding returned %d.\n", status);
-        vtaErrorPrint(status, -1);
-        return 1;
-    }
-
-    VTAMemInsn *store;
-    store = (VTAMemInsn *)&insnBuffer[0];
-
-    if (store->pop_prev_dep != 1) {
-        printf(" FAIL! STORE pop_prev_dep expected 1, got %u.\n",
-               (unsigned)store->pop_prev_dep);
-        error++;
-    }
-
-    if (store->pop_next_dep != 0) {
-        printf(" FAIL! STORE pop_next_dep expected 0, got %u.\n",
-               (unsigned)store->pop_next_dep);
-        error++;
-    }
-
-    if (store->push_prev_dep != 1) {
-        printf(" FAIL! STORE push_prev_dep expected 1, got %u.\n",
-               (unsigned)store->push_prev_dep);
-        error++;
-    }
-
-    if (store->push_next_dep != 0) {
-        printf(" FAIL! STORE push_next_dep expected 0, got %u.\n",
-               (unsigned)store->push_next_dep);
-        error++;
-    }
-
-    /*
-     * 17.3 GEMM
-     *
-     * POP:
-     *   LD->EX -> pop_prev_dep
-     *   ST->EX -> pop_next_dep
-     *
-     * PUSH:
-     *   EX->LD -> push_prev_dep
-     *   EX->ST -> push_next_dep
-     */
-    memset(insnBuffer, 0, sizeof(insnBuffer));
-    memset(uopBuffer, 0, sizeof(uopBuffer));
-
-    const char *gemmCode =
-        "lbl_bgn:\n"
-        "10, 20, 30\n"
-        "11, 21, 31\n"
-        "12, 22, 32\n"
-        "lbl_end:\n"
-        "POP (LD->EX, ST->EX)\n"
-        "FOR (2, 4) UOP (lbl_bgn, lbl_end)\n"
-        "GEMM(ACC[0:3], INP[0:3], WGT[0:3])\n"
-        "PUSH (EX->LD, EX->ST)\n";
-
-    numInsn = 0;
-    numUop = 0;
-
-    status = vtaAssemble(
-        gemmCode,
-        insnBuffer,
-        8,
-        &numInsn,
-        uopBuffer,
-        8,
-        &numUop
-    );
-
-    if (status != VTA_OK) {
-        printf(" FAIL! GEMM dependency encoding returned %d.\n", status);
-        vtaErrorPrint(status, -1);
-        return 1;
-    }
-
-    VTAGemInsn *gemm;
-    gemm = (VTAGemInsn *)&insnBuffer[0];
-
-    if (gemm->pop_prev_dep != 1) {
-        printf(" FAIL! GEMM pop_prev_dep expected 1, got %u.\n",
-               (unsigned)gemm->pop_prev_dep);
-        error++;
-    }
-
-    if (gemm->pop_next_dep != 1) {
-        printf(" FAIL! GEMM pop_next_dep expected 1, got %u.\n",
-               (unsigned)gemm->pop_next_dep);
-        error++;
-    }
-
-    if (gemm->push_prev_dep != 1) {
-        printf(" FAIL! GEMM push_prev_dep expected 1, got %u.\n",
-               (unsigned)gemm->push_prev_dep);
-        error++;
-    }
-
-    if (gemm->push_next_dep != 1) {
-        printf(" FAIL! GEMM push_next_dep expected 1, got %u.\n",
-               (unsigned)gemm->push_next_dep);
-        error++;
-    }
-
-    memset(insnBuffer, 0, sizeof(insnBuffer));
-    memset(uopBuffer, 0, sizeof(uopBuffer));
-
-    const char *aluCode =
-        "lbl_bgn:\n"
-        "10, 20, 30\n"
-        "11, 21, 31\n"
-        "12, 22, 32\n"
-        "lbl_end:\n"
-        "POP (LD->EX, ST->EX)\n"
-        "FOR (2, 4) UOP (lbl_bgn, lbl_end)\n"
-        "ALU.ADD(DST[0:3], 7)\n"
-        "PUSH (EX->LD, EX->ST)\n";
-
-    numInsn = 0;
-    numUop = 0;
-
-    status = vtaAssemble(
-        aluCode,
-        insnBuffer,
-        8,
-        &numInsn,
-        uopBuffer,
-        8,
-        &numUop
-    );
-
-    if (status != VTA_OK) {
-        printf(" FAIL! ALU dependency encoding returned %d.\n", status);
-        vtaErrorPrint(status, -1);
-        return 1;
-    }
-
-    VTAAluInsn *alu;
-    alu = (VTAAluInsn *)&insnBuffer[0];
-
-    if (alu->pop_prev_dep != 1) {
-        printf(" FAIL! ALU pop_prev_dep expected 1, got %u.\n",
-               (unsigned)alu->pop_prev_dep);
-        error++;
-    }
-
-    if (alu->pop_next_dep != 1) {
-        printf(" FAIL! ALU pop_next_dep expected 1, got %u.\n",
-               (unsigned)alu->pop_next_dep);
-        error++;
-    }
-
-    if (alu->push_prev_dep != 1) {
-        printf(" FAIL! ALU push_prev_dep expected 1, got %u.\n",
-               (unsigned)alu->push_prev_dep);
-        error++;
-    }
-
-    if (alu->push_next_dep != 1) {
-        printf(" FAIL! ALU push_next_dep expected 1, got %u.\n",
-               (unsigned)alu->push_next_dep);
-        error++;
-    }
-
-    if (error == 0)
-        printf(" PASS! POP/PUSH dependencies encoded correctly.\n");
-
-    return error;
-}
-
-
-void executeTestsAssembler(int *error) {
-    *error += test_uopDetection();
-    *error += test_invalidUop();
-    *error += test_assemblerTooManyUopFields();
-    *error += test_simpleInstructions();
-    *error += test_invalidSimpleInstruction();
-    *error += test_loadParsing();
-    *error += test_invalidLoadMemoryType();
-    *error += test_invalidLoadArguments();
-    *error += test_loadEncoding();
-    *error += test_uopEncoding();
-    *error += test_storeEncoding();
-    *error += test_gemmEnconding();
-    *error += test_gemmLabelResolution();
-    *error += test_gemmRstEncoding();
-    *error += test_aluEncoding();
-    *error += test_aluSrcEncoding();
-    *error += test_dependencyEncoding();
-}
-
-
-int _executeA(void) {
-    int error;
-    error = 0;
-
-    printf("[ASSEMBLER] STRESS TEST FOR VTA ASSEMBLER.");
-
-    error += test_uopDetection();
-
-    if (error > 0)
-        printf("X - NOT ALL TESTS HAVE PASSED (%d failures).\n", error);
-    else
-        printf("✔ - ALL TEST HAVE BEEN SUCCESSFULLY HANDLED!\n");
-
-    return error;
-}
-
-
-static void printHeaderD(const char *testName) {
-    printf("\n----\n");
-    printf(" [DISASSEMBLER]: %s", testName);
+    printf("[%s]: %s", label, testName);
     printf("\n----\n");
 }
 
 
-static void checkStatus(VTAErr status, VTAErr expectedStatus, int *errorCount) {
-    if (status == expectedStatus) {
-        if (status != VTA_OK) vtaErrorPrint(status, -1);
-        printf(" PASS! Crashes avoided and correct error returned.\n\n");
-    } else {
-        printf(" FAIL! Expected status: [%d] but got [%d].\n\n", expectedStatus, status);
-        (*errorCount)++;
+static void printTestName(
+    int verbose, 
+    const char *testName, 
+    ...
+) 
+{
+    va_list args;
+    va_start(args, testName);
+
+    printf("» ");
+    vprintf(testName, args);
+    printf("%c ", (verbose) ? '\n' : ':');
+
+    va_end(args);
+}
+
+
+static void checkStatus(
+    VTAErr  status,
+    VTAErr  expectedStatus,
+    int     *errorCount,
+    int     verbose
+)
+{
+    if (verbose) 
+    {
+        if (status == expectedStatus)
+        {
+            if (status != VTA_OK)
+                vtaErrorPrint(status, -1);
+            printf("%s Crashes avoided and correct error returned.\n\n", PASS_CHAR);
+        }
+        else
+        {
+            printf("%s Expected status [%d] but got [%d].\n\n", FAIL_CHAR, expectedStatus, status);
+            (*errorCount)++;
+        }
+    }
+    else 
+    {
+        if (status == expectedStatus)
+            printf("%s\n", PASS_CHAR);
+        else
+        {
+            printf("%s\n", FAIL_CHAR);
+            (*errorCount)++;
+        }
     }
 }
 
 
-static int checkOutput(const char *testName, VTAErr status, const char *actual, const char *expected) {
-    if (status != VTA_OK) {
-        printf(" FAIL! %s returned status [%d].\n\n", testName, status);
-        return 1;
-    }
-
-    if (strcmp(actual, expected) != 0) {
-        printf(" FAIL! %s produced unexpected output.\n", testName);
-        printf(" - Expected:\n%s - Actual:\n%s\n", expected, actual);
-        return 1;
-    }
-
-    printf(" PASS! %s.\n\n", testName);
-    return 0;
-}
-
-
-static int test_nullPointers(void) {
-    printHeaderD("1. Check on NULL pointers and numInsn <= 0.");
-
-    int error;
-    error = 0;
-
-    VTAErr status;
-    
-    char outBuffer[OUT_BUF_SIZE];
-
-    printf(" 1.1 - Passing insnBuffer = NULL, numInsn = 5\n");
-    status = vtaDisassemble(NULL, 5, NULL, 0, outBuffer, sizeof(outBuffer));
-    checkStatus(status, VTA_ERR_NULLPTR, &error);
-
-    printf(" 1.2 - Passing numInsn = 0\n");
-    VTAGenericInsn testInsn;
-    memset(&testInsn, 0, sizeof(testInsn));
-    status = vtaDisassemble(&testInsn, 0, NULL, 0, outBuffer, sizeof(outBuffer));
-    checkStatus(status, VTA_ERR_INVALID_INSN_SIZE, &error);
-
-    printf(" 1.3 - Passing numInsn = -5\n");
-    status = vtaDisassemble(&testInsn, -5, NULL, 0, outBuffer, sizeof(outBuffer));
-    checkStatus(status, VTA_ERR_INVALID_INSN_SIZE, &error);
-
-    printf(" 1.4 - Passing numUop = -1\n");
-    status = vtaDisassemble(&testInsn, 1, NULL, -1, outBuffer, sizeof(outBuffer));
-    checkStatus(status, VTA_ERR_INVALID_INSN_SIZE, &error);
-
-    return error;
-}
-
-
-static int test_invalidOPCode(void) {
-    printHeaderD("2. Check on invalid/unknown OPCodes.");
-
-    int error;
-    error = 0;
-
-    VTAErr status;
-
-    char outBuffer[OUT_BUF_SIZE];
-
-    VTAGenericInsn testInsns;
-    memset(&testInsns, 0, sizeof(testInsns));
-    testInsns.opcode = 7;
-
-    printf(" 2.1 - Passing instruction with unknown opcode (%d)\n", testInsns.opcode);
-    status = vtaDisassemble(&testInsns, 1, NULL, 0, outBuffer, sizeof(outBuffer));
-    checkStatus(status, VTA_ERR_UNKNOWN_OPCODE, &error);
-
-    return error;
-}
-
-
-static int test_uopOutOfBounds(void) {
-    printHeaderD("3. Check on if UOP indices are out of bounds.");
-
-    int error;
-    error = 0;
-
-    VTAErr status;
-    
-    char outBuffer[OUT_BUF_SIZE];
-    
-    VTAUop uopBuffer[VTA_UOP_BUFF_DEPTH];
-    memset(uopBuffer, 0, sizeof(uopBuffer));
-
-    VTAGemInsn testGemmInsn;
-    memset(&testGemmInsn, 0, sizeof(testGemmInsn));
-
-    VTAGenericInsn *insn;
-    insn = (VTAGenericInsn *)&testGemmInsn;
-
-    insn->opcode = VTA_OPCODE_GEMM;
-    testGemmInsn.uop_bgn = 0;
-    testGemmInsn.uop_end = VTA_UOP_BUFF_DEPTH + 1;
-
-    printf(" 3.1 - Passing GEMM instruction with uop_end (%u) > VTA_UOP_BUFF_DEPTH (%u)\n", (unsigned)testGemmInsn.uop_end, (unsigned)VTA_UOP_BUFF_DEPTH);
-    status = vtaDisassemble(insn, 1, uopBuffer, VTA_UOP_BUFF_DEPTH, outBuffer, sizeof(outBuffer));
-    checkStatus(status, VTA_ERR_UOP_OUT_OF_BOUNDS, &error);
-
-    testGemmInsn.uop_bgn = 10;
-    testGemmInsn.uop_end = 9;
-
-    printf(" 3.2 - Passing GEMM instruction with uop_bgn (%u) > uop_end (%u)\n", (unsigned)testGemmInsn.uop_bgn, (unsigned)testGemmInsn.uop_end);
-    status = vtaDisassemble(insn, 1, uopBuffer, VTA_UOP_BUFF_DEPTH, outBuffer, sizeof(outBuffer));
-    checkStatus(status, VTA_ERR_UOP_OUT_OF_BOUNDS, &error);
-
-    return error;
-}
-
-
-static int test_nullUopBuffer(void) {
-    printHeaderD("4. Check on GEMM/ALU instructions with uopBuffer = NULL.");
-
-    int error;
-    error = 0;
-
-    VTAErr status;
-
-    char outBuffer[OUT_BUF_SIZE];
-
-
-    VTAGemInsn testGemmInsn;
-    memset(&testGemmInsn, 0, sizeof(testGemmInsn));
-
-    VTAGenericInsn* insn;
-    insn = (VTAGenericInsn*)&testGemmInsn;
-
-    insn->opcode = VTA_OPCODE_GEMM;
-    testGemmInsn.uop_bgn    = 0;
-    testGemmInsn.uop_end    = 4;
-    testGemmInsn.iter_out   = 1;
-    testGemmInsn.iter_in    = 1;
-
-    printf(" 4.1 - Disassembling GEMM with uopBuffer = NULL\n");
-    status = vtaDisassemble(insn, 1, NULL, 5, outBuffer, sizeof(outBuffer));
-    checkStatus(status, VTA_ERR_NULLPTR, &error);
-
-    printf(" 4.2 - Passing numUop = 0 with uopBuffer = NULL\n");
-    VTAGenericInsn finish;
-    memset(&finish, 0, sizeof(finish));
-
-    finish.opcode = VTA_OPCODE_FINISH;
-
-    status = vtaDisassemble(&finish, 1, NULL, 0, outBuffer, sizeof(outBuffer));
-    checkStatus(status, VTA_OK, &error);
-
-    return error;
-}
-
-
-// * this was the content in the old main + insnMaker
+/* ------------
+    HELPERS FOR TESTS 
+*/
 static void memInsn( 
     VTAGenericInsn *insn_queue, int insn_idx, int opcode, int mem_type, 
     int sram_base, uint32_t dram_base, int x_size, int y_size, int x_stride,
     int pop_prev, int pop_next, int push_prev, int push_next
-) {
+) 
+{
     VTAMemInsn *insn = (VTAMemInsn *)&insn_queue[insn_idx];
     memset(insn, 0, sizeof(VTAMemInsn));
 
@@ -1534,7 +110,8 @@ static void gemmInsn(
     int uop_bgn, int uop_end, int iter_out, int iter_in, int dst_factor, 
     int src_factor, int wgt_factor, int pop_prev, int pop_next, 
     int push_prev, int push_next
-){
+)
+{
     VTAGemInsn *insn = (VTAGemInsn *)&insn_queue[insn_idx];
     memset(insn, 0, sizeof(VTAGemInsn));
 
@@ -1554,15 +131,16 @@ static void gemmInsn(
 }
 
 
-// * helper for below
-static int countOccurrences(const char *text, const char *pattern) {
+static int countOccurrences(const char *text, const char *pattern) 
+{
     int count;
     count = 0;
 
     const char *cursor;
     cursor = text;
 
-    while ((cursor = strstr(cursor, pattern)) != NULL) {
+    while ((cursor = strstr(cursor, pattern)) != NULL) 
+    {
         count++;
         cursor += strlen(pattern);
     }
@@ -1571,18 +149,194 @@ static int countOccurrences(const char *text, const char *pattern) {
 }
 
 
-static int test_labelReuse(void) {
-    printHeaderD("5. Check on Label Generation and Reuse (from main.c)");
+static int checkOutput(
+    const char *testName,
+    VTAErr status, 
+    const char *actual, 
+    const char *expected,
+    int verbose
+) 
+{
+    if (status != VTA_OK) 
+    {
+        printf((verbose) ? " %s! %s returned status [%d].\n\n" : "X\n", FAIL_CHAR, testName, status);
+        return 1;
+    }
+
+    if (strcmp(actual, expected) != 0) 
+    {
+        printf((verbose) ? " %s! %s produced unexpected output.\n" : "%s", FAIL_CHAR, testName);
+        printf((verbose) ? " - Expected:\n%s - Actual:\n%s\n" : "\n", expected, actual);
+        return 1;
+    }
+
+    printf((verbose) ? " %s! %s.\n\n" : "%s\n", PASS_CHAR, testName);
+    return 0;
+}
+
+
+/* ------------
+    TESTS FOR THE DISASSEMBLER
+*/
+
+
+static int dTest_nullPointers(int verbose) 
+{
+    printHeader("DISASSEMBLER", "Check on NULL pointers and numInsn <= 0");
+
+    int error;
+    error = 0;
+
+    VTAErr status;
+    
+    char outBuffer[OUT_BUF_SIZE];
+
+    printTestName(verbose, "Passing insnBuffer = NULL, numInsn = 5");
+    status = vtaDisassemble(NULL, 5, NULL, 0, outBuffer, sizeof(outBuffer));
+    checkStatus(status, VTA_ERR_NULLPTR, &error, verbose);
+
+    printTestName(verbose, "Passing numInsn = 0");
+    VTAGenericInsn testInsn;
+    memset(&testInsn, 0, sizeof(testInsn));
+    status = vtaDisassemble(&testInsn, 0, NULL, 0, outBuffer, sizeof(outBuffer));
+    checkStatus(status, VTA_ERR_INVALID_INSN_SIZE, &error, verbose);
+
+    printTestName(verbose, "Passing numInsn = -5");
+    status = vtaDisassemble(&testInsn, -5, NULL, 0, outBuffer, sizeof(outBuffer));
+    checkStatus(status, VTA_ERR_INVALID_INSN_SIZE, &error, verbose);
+
+    printTestName(verbose, "Passing numUop = -1");
+    status = vtaDisassemble(&testInsn, 1, NULL, -1, outBuffer, sizeof(outBuffer));
+    checkStatus(status, VTA_ERR_INVALID_INSN_SIZE, &error, verbose);
+
+    return error;
+}
+
+
+static int dTest_invalidOPCode(int verbose) 
+{
+    printHeader("DISASSEMBLER", "Check on invalid / unknwon opcodes.");
+
+    int error;
+    error = 0;
+
+    VTAErr status;
+
+    char outBuffer[OUT_BUF_SIZE];
+
+    VTAGenericInsn testInsns;
+    memset(&testInsns, 0, sizeof(testInsns));
+    testInsns.opcode = 7;
+
+    printTestName(verbose, "Passing instruction with unknown opcode (%d)", testInsns.opcode);
+    status = vtaDisassemble(&testInsns, 1, NULL, 0, outBuffer, sizeof(outBuffer));
+    checkStatus(status, VTA_ERR_UNKNOWN_OPCODE, &error, verbose);
+
+    return error;
+}
+
+
+static int dTest_uopOutOfBounds(int verbose) 
+{
+    printHeader("DISASSEMBLER", "Check on if UOP indices are out of bounds.");
+
+    int error;
+    error = 0;
+
+    VTAErr status;
+    
+    char outBuffer[OUT_BUF_SIZE];
+    
+    VTAUop uopBuffer[VTA_UOP_BUFF_DEPTH];
+    memset(uopBuffer, 0, sizeof(uopBuffer));
+
+    VTAGemInsn testGemmInsn;
+    memset(&testGemmInsn, 0, sizeof(testGemmInsn));
+
+    VTAGenericInsn *insn;
+    insn = (VTAGenericInsn *)&testGemmInsn;
+
+    insn->opcode            = VTA_OPCODE_GEMM;
+    testGemmInsn.uop_bgn    = 0;
+    testGemmInsn.uop_end    = VTA_UOP_BUFF_DEPTH + 1;
+
+    printTestName(verbose, "Passing GEMM instruction with uop_end (%u) > VTA_UOP_BUFF_DEPTH (%u)", 
+        (unsigned)testGemmInsn.uop_end, (unsigned)VTA_UOP_BUFF_DEPTH);
+
+    status = vtaDisassemble(insn, 1, uopBuffer, VTA_UOP_BUFF_DEPTH, outBuffer, sizeof(outBuffer));
+    checkStatus(status, VTA_ERR_UOP_OUT_OF_BOUNDS, &error, verbose);
+
+    testGemmInsn.uop_bgn = 10;
+    testGemmInsn.uop_end = 9;
+
+    printTestName(verbose, "Passing GEMM instruction with uop_bgn (%u) > uop_end (%u)", 
+        (unsigned)testGemmInsn.uop_bgn, (unsigned)testGemmInsn.uop_end);
+
+    status = vtaDisassemble(insn, 1, uopBuffer, VTA_UOP_BUFF_DEPTH, outBuffer, sizeof(outBuffer));
+    checkStatus(status, VTA_ERR_UOP_OUT_OF_BOUNDS, &error, verbose);
+
+    return error;
+}
+
+
+static int dTest_nullUopBuffer(int verbose) 
+{
+    printHeader("DISASSEMBLER", "Check on GEMM/ALU instructions with uopBuffer = NULL.");
+
+    int error;
+    error = 0;
+
+    VTAErr status;
+
+    char outBuffer[OUT_BUF_SIZE];
+
+    VTAGemInsn testGemmInsn;
+    memset(&testGemmInsn, 0, sizeof(testGemmInsn));
+
+    VTAGenericInsn* insn;
+    insn = (VTAGenericInsn*)&testGemmInsn;
+
+    insn->opcode = VTA_OPCODE_GEMM;
+
+    testGemmInsn.uop_bgn    = 0;
+    testGemmInsn.uop_end    = 4;
+    testGemmInsn.iter_out   = 1;
+    testGemmInsn.iter_in    = 1;
+
+    printTestName(verbose, "Disassembling GEMM with uopBuffer = NULL");
+    status = vtaDisassemble(insn, 1, NULL, 5, outBuffer, sizeof(outBuffer));
+    checkStatus(status, VTA_ERR_NULLPTR, &error, verbose);
+
+    printTestName(verbose, "Passing numUop = 0 with uopBuffer = NULL");
+    VTAGenericInsn finish;
+    memset(&finish, 0, sizeof(finish));
+
+    finish.opcode = VTA_OPCODE_FINISH;
+
+    status = vtaDisassemble(&finish, 1, NULL, 0, outBuffer, sizeof(outBuffer));
+    checkStatus(status, VTA_OK, &error, verbose);
+
+    return error;
+}
+
+
+static int dTest_labelReuse(int verbose) 
+{
+    printHeader("DISASSEMBLER", "Check on Label Generation and Reuse (from main.c)");
+
     int error;
     error = 0;
 
     VTAGenericInsn insn_stream[5];
-    VTAUop uop_stream[5];
-    char out_buf[OUT_BUF_SIZE];
-
     memset(insn_stream, 0, sizeof(insn_stream));
+
+    VTAUop uop_stream[5];
     memset(uop_stream, 0, sizeof(uop_stream));
+
+    char out_buf[OUT_BUF_SIZE];
     memset(out_buf, 0, sizeof(out_buf));
+
+    printTestName(verbose, "Encoding instructions and UOPs to test the labels");
 
     uop_stream[0].dst_idx = 10; uop_stream[0].src_idx = 20; uop_stream[0].wgt_idx = 30;
     uop_stream[1].dst_idx = 40; uop_stream[1].src_idx = 50; uop_stream[1].wgt_idx = 60;
@@ -1603,8 +357,9 @@ static int test_labelReuse(void) {
     VTAErr status;
     status = vtaDisassemble(insn_stream, 5, uop_stream, 5, out_buf, sizeof(out_buf));   
 
-    if (status != VTA_OK) {
-        printf(" FAIL! Disassembler returned error %d\n", status);
+    if (status != VTA_OK) 
+    {
+        printf((verbose) ? " X! Disassembler returned error %d\n" : "X", status);
         return 1;
     }
     
@@ -1613,33 +368,37 @@ static int test_labelReuse(void) {
         countOccurrences(out_buf, "lbl1_end:") != 1 ||
         countOccurrences(out_buf, "lbl2_bgn:") != 1 ||
         countOccurrences(out_buf, "lbl2_end:") != 1 
-    ) {
-        printf(" FAIL! Disassembler returned error %d\n", status);
+    ) 
+    {
+        printf((verbose) ? " X! Disassembler returned error %d\n" : "X", status);
         error++;
     } 
 
-    if (countOccurrences(out_buf, "FOR (4, 2) UOP (lbl1_bgn, lbl1_end)") != 2) {
-        printf(" FAIL! UOP range [0, 2) did not reuse lbl1.\n");
+    if (countOccurrences(out_buf, "FOR (4, 2) UOP (lbl1_bgn, lbl1_end)") != 2) 
+    {
+        printf((verbose) ? " X! UOP range [0, 2) did not reuse lbl1.\n" : "X");
         error++;
     }
 
-    if (countOccurrences(out_buf, "FOR (4, 2) UOP (lbl2_bgn, lbl2_end)") != 1) {
-        printf(" FAIL! UOP range [1, 4) did not generate lbl2.\n");
+    if (countOccurrences(out_buf, "FOR (4, 2) UOP (lbl2_bgn, lbl2_end)") != 1) 
+    {
+        printf((verbose) ? " X! UOP range [1, 4) did not generate lbl2.\n" : "X");
         error++;
     }
 
-
-    if (error == 0) {
-        printf(" PASS! Labels are generated and reused correctly.\n\n");
-        printf("Generated output:\n\n%s\n", out_buf);
+    if (error == 0) 
+    {
+        printf((verbose) ? " ✔! Labels are generated and reused correctly.\n" : "✔\n");
+        printf((verbose) ? "Generated output:\n\n%s\n" : "", out_buf );
     }
 
     return error;
 }
 
 
-static int test_outputBuffer(void) {
-    printHeaderD("6. Check on output buffer parameters.");
+static int dTest_outputBuffer(int verbose) 
+{
+    printHeader("DISASSEMBLER", "Check on output buffer parameters.");
 
     int error;
     error = 0;
@@ -1647,33 +406,34 @@ static int test_outputBuffer(void) {
     VTAErr status;
 
     VTAGenericInsn testInsn;
-
-    char outBuffer[OUT_BUF_SIZE];
     memset(&testInsn, 0, sizeof(testInsn));
 
-    printf(" 6.1 - Passing outBuffer = NULL\n");
-    status = vtaDisassemble(&testInsn, 1, NULL, 0, NULL, sizeof(outBuffer));
-    checkStatus(status, VTA_ERR_NULLPTR, &error);
+    char outBuffer[OUT_BUF_SIZE];
 
-    printf(" 6.2 - Passing outBufferSize = 0\n");
+    printTestName(verbose, "Passing outBuffer = NULL");
+    status = vtaDisassemble(&testInsn, 1, NULL, 0, NULL, sizeof(outBuffer));
+    checkStatus(status, VTA_ERR_NULLPTR, &error, verbose);
+
+    printTestName(verbose, "Passing outBufferSize = 0");
     status = vtaDisassemble(&testInsn, 1, NULL, 0, outBuffer, 0);
-    checkStatus(status, VTA_ERR_INVALID_INSN_SIZE, &error);
+    checkStatus(status, VTA_ERR_INVALID_INSN_SIZE, &error, verbose);
 
     testInsn.opcode = VTA_OPCODE_FINISH;
 
-    printf(" 6.3 - Passing too small outBuffer\n");
+    printTestName(verbose, "Passing too small outBuffer");
     char tinyBuffer[4];
     status = vtaDisassemble(&testInsn, 1, NULL, 0, tinyBuffer, sizeof(tinyBuffer));
-    checkStatus(status, VTA_ERR_OUTPUT_BUFFER_FULL, &error);
+    checkStatus(status, VTA_ERR_OUTPUT_BUFFER_FULL, &error, verbose);
 
-    printf(" 6.4 - Passing exactly sized output buffer\n");
+    printTestName(verbose, "Passing exactly sized outBuffer");
     const char expected[] = "FINISH\n\n";
     char exactBuffer[sizeof(expected)];
     status = vtaDisassemble(&testInsn, 1, NULL, 0, exactBuffer, sizeof(exactBuffer));
-    checkStatus(status, VTA_OK, &error);
+    checkStatus(status, VTA_OK, &error, verbose);
 
-    if (status == VTA_OK && strcmp(exactBuffer, "FINISH\n\n") != 0) {
-        printf(" FAIL! Exact-size buffer contains incorrect output.\n\n");
+    if (status == VTA_OK && strcmp(exactBuffer, "FINISH\n\n") != 0) 
+    {
+        printf((verbose) ? " X! Exact-size buffer contains incorrect output.\n\n" : "X");
         error++;
     }
 
@@ -1681,8 +441,9 @@ static int test_outputBuffer(void) {
 }
 
 
-static int test_uopBufferSize(void) {
-    printHeaderD("7. Check UOP indices against numUop.");
+static int dTest_uopBufferSize(int verbose) 
+{
+    printHeader("DISASSEMBLER", "Check UOPs indices against numUop.");
 
     int error;
     error = 0;
@@ -1695,35 +456,38 @@ static int test_uopBufferSize(void) {
 
     VTAGemInsn testGemmInsn;
     memset(&testGemmInsn, 0, sizeof(testGemmInsn));
-    VTAGenericInsn *insn;
-    insn = (VTAGenericInsn *)&testGemmInsn;
-    insn->opcode = VTA_OPCODE_GEMM;
 
     testGemmInsn.uop_bgn = 0;
     testGemmInsn.uop_end = 5;
 
+    VTAGenericInsn *insn;
+    insn = (VTAGenericInsn *)&testGemmInsn;
+    insn->opcode = VTA_OPCODE_GEMM;
+
     int numUop;
     numUop = 4;
 
-    printf(" 7.1 - Passing uop_end (%u) > numUop (%u)\n", (unsigned)testGemmInsn.uop_end, (unsigned)numUop);
-
+    printTestName(verbose, "Passing uop_end (%u) > numUop (%u)",
+        (unsigned)testGemmInsn.uop_end, (unsigned)numUop
+    );
     status = vtaDisassemble(insn, 1, uopBuffer, numUop, outBuffer, sizeof(outBuffer));
-    checkStatus(status, VTA_ERR_UOP_OUT_OF_BOUNDS, &error);
+    checkStatus(status, VTA_ERR_UOP_OUT_OF_BOUNDS, &error, verbose);
 
     testGemmInsn.uop_bgn = 0;
     testGemmInsn.uop_end = 4;
 
-    printf(" 7.2 - Passing valid range [%u, %u) with numUop = %u\n", (unsigned)testGemmInsn.uop_bgn, (unsigned)testGemmInsn.uop_end, (unsigned)numUop);
-
+    printTestName(verbose, "Passing valid range [%u, %u) with numUop = %u",
+         (unsigned)testGemmInsn.uop_bgn, (unsigned)testGemmInsn.uop_end, (unsigned)numUop);
     status = vtaDisassemble(insn, 1, uopBuffer, numUop, outBuffer, sizeof(outBuffer));
-    checkStatus(status, VTA_OK, &error);
+    checkStatus(status, VTA_OK, &error, verbose);
 
     return error;
 }
 
 
-static int test_finish(void) {
-    printHeaderD("8. Check FINISH disassembly.");
+static int dTest_finish(int verbose) 
+{
+    printHeader("DISASSEMBLER", "Check FINISH disassembly.");
 
     int error;
     error = 0;
@@ -1731,49 +495,58 @@ static int test_finish(void) {
     VTAGenericInsn insn;
     memset(&insn, 0, sizeof(insn));
 
+    insn.opcode = VTA_OPCODE_FINISH;
+
     char outBuffer[OUT_BUF_SIZE];
     memset(outBuffer, 0, sizeof(outBuffer));
 
-    insn.opcode = VTA_OPCODE_FINISH;
+    printTestName(verbose, "FINISH works correctly");
 
     VTAErr status;
     status = vtaDisassemble(&insn, 1, NULL, 0, outBuffer, sizeof(outBuffer));
 
-    if (status != VTA_OK) {
-        printf(" FAIL! Unexpected status [%d]", status);
+    if (status != VTA_OK) 
+    {
+        printf((verbose) ? " X! Unexpected status [%d]" : "X", status);
         return 1;
     }
 
-    if (strcmp(outBuffer, "FINISH\n\n") != 0) {
-        printf(" FAIL! Unexpected output:\n%s\n", outBuffer);
+    if (strcmp(outBuffer, "FINISH\n\n") != 0) 
+    {
+        printf((verbose) ? " X! Unexpected output:\n%s\n" : "X", outBuffer);
         return 1;
     }
 
-    printf(" PASS! FINISH disassembled correctly.\n");
+    printf((verbose) ? " ✔! FINISH disassembled correctly.\n" : "✔");
     return 0;
 }
 
 
-static int test_noop(void) {
-    printHeaderD("9. Check NOOP disassembly.");
+static int dTest_noop(int verbose) 
+{
+    printHeader("DISASSEMBLER", "Check NOOP disassembly");
+
+    printTestName(verbose, "NOOP works correctly");
 
     VTAMemInsn insn;
-    char outBuffer[OUT_BUF_SIZE];
-
     memset(&insn, 0, sizeof(insn));
-    memset(outBuffer, 0, sizeof(outBuffer));
 
     insn.opcode = VTA_OPCODE_LOAD;
     insn.x_size = 0;
 
+    char outBuffer[OUT_BUF_SIZE];
+    memset(outBuffer, 0, sizeof(outBuffer));
+
     VTAErr status;
     status = vtaDisassemble((VTAGenericInsn *)&insn, 1, NULL, 0, outBuffer, sizeof(outBuffer));
 
-    return checkOutput("NOOP", status, outBuffer, "NOOP\n\n");
+    return checkOutput("NOOP", status, outBuffer, "NOOP\n\n", verbose);
 }
 
-static int test_load(void) {
-    printHeaderD("10. Check LOAD disassembly.");
+
+static int dTest_load(int verbose) 
+{
+    printHeader("DISASSEMBLER", "Check LOAD disassembly");
 
     int error;
     error = 0;
@@ -1781,7 +554,7 @@ static int test_load(void) {
     VTAMemInsn insn;
     char outBuffer[OUT_BUF_SIZE];
 
-    printf(" 10.1 - Uop memory load.\n");
+    printTestName(verbose, "UOP memory load");
 
     memset(&insn, 0, sizeof(insn));
     memset(outBuffer, 0, sizeof(outBuffer));
@@ -1795,9 +568,15 @@ static int test_load(void) {
     VTAErr status;
     status = vtaDisassemble((VTAGenericInsn *)&insn, 1, NULL, 0, outBuffer, sizeof(outBuffer));
 
-    error += checkOutput("LOAD from UOP memory", status, outBuffer, "LOAD(UOP[7], MEM[11, 3])\n\n");
+    error += checkOutput(
+        "LOAD from UOP memory", 
+        status, 
+        outBuffer, 
+        "LOAD(UOP[7], MEM[11, 3])\n\n", 
+        verbose
+    );
 
-    printf(" 10.2 - Normal 2d load.\n");
+    printTestName(verbose, "Normal 2D load");
 
     memset(&insn, 0, sizeof(insn));
     memset(outBuffer, 0, sizeof(outBuffer));
@@ -1811,15 +590,1856 @@ static int test_load(void) {
     insn.x_stride       = 16;
 
     status = vtaDisassemble((VTAGenericInsn *)&insn, 1, NULL, 0, outBuffer, sizeof(outBuffer));
-    error += checkOutput("2D LOAD", status, outBuffer, "LOAD(INP[4], MEM[100, 2, 8, 16])\n\n");
+    error += checkOutput(
+        "2D LOAD", 
+        status, 
+        outBuffer, 
+        "LOAD(INP[4], MEM[100, 2, 8, 16])\n\n",
+        verbose
+    );
 
     return error;
 }
 
 
-static int test_roundtripLoad(void)
+static int dTest_store(int verbose) 
 {
-    printHeaderD("11. Check LOAD assemble/disassemble round-trip.");
+    printHeader("DISASSEMBLER", "Check STORE disassembly");
+
+    printTestName(verbose, "STORE works correctly");
+
+    VTAMemInsn insn;
+    memset(&insn, 0, sizeof(insn));
+
+    char outBuffer[OUT_BUF_SIZE];
+    memset(outBuffer, 0, sizeof(outBuffer));
+
+    insn.opcode     = VTA_OPCODE_STORE;
+    insn.sram_base  = 5;
+    insn.dram_base  = 200;
+    insn.y_size     = 2;
+    insn.x_size     = 8;
+    insn.x_stride   = 16;
+
+    VTAErr status;
+    status = vtaDisassemble((VTAGenericInsn *)&insn, 1, NULL, 0, outBuffer, sizeof(outBuffer));
+
+    return checkOutput(
+        "STORE", 
+        status, 
+        outBuffer, 
+        "STOR(MEM[200, 2, 8, 16], ACC[5])\n\n",
+        verbose
+    );
+}
+
+
+static int dTest_alu(int verbose) 
+{
+    printHeader("DISASSEMBLER", "Check ALU disassembly");
+
+    int error = 0;
+
+    VTAAluInsn insn;
+    char outBuffer[OUT_BUF_SIZE];
+
+    VTAUop uopBuffer[4];
+    memset(uopBuffer, 0, sizeof(uopBuffer));
+
+    printTestName(verbose, "ALU with immediate");
+
+    memset(&insn, 0, sizeof(insn));
+    memset(outBuffer, 0, sizeof(outBuffer));
+
+    insn.opcode     = VTA_OPCODE_ALU;
+    insn.alu_opcode = VTA_ALU_OPCODE_MIN;
+    insn.uop_bgn    = 0;
+    insn.uop_end    = 2;
+    insn.iter_out   = 3;
+    insn.iter_in    = 4;
+    insn.use_imm    = 1;
+    insn.imm        = -7;
+
+    VTAErr status;
+    status = vtaDisassemble((VTAGenericInsn *)&insn, 1, uopBuffer, 2, outBuffer, sizeof(outBuffer));
+
+    error += checkOutput(
+        "ALU with immediate",
+        status,
+        outBuffer,
+        "lbl1_bgn:\n"
+        "   0, 0, 0\n"
+        "   0, 0, 0\n"
+        "lbl1_end:\n"
+        "\n"
+        "FOR (3, 4) UOP (lbl1_bgn, lbl1_end)\n"
+        "ALU.MIN(DST[0:2], -7)\n"
+        "\n",
+        verbose
+    );
+
+    printTestName(verbose, "ALU without immediate");
+    memset(&insn, 0, sizeof(insn));
+    memset(outBuffer, 0, sizeof(outBuffer));
+
+    insn.opcode     = VTA_OPCODE_ALU;
+    insn.alu_opcode = VTA_ALU_OPCODE_ADD;
+    insn.uop_bgn    = 1;
+    insn.uop_end    = 4;
+    insn.iter_out   = 2;
+    insn.iter_in    = 5;
+    insn.use_imm    = 0;
+
+    status = vtaDisassemble((VTAGenericInsn *)&insn, 1, uopBuffer, 4, outBuffer, sizeof(outBuffer));
+    
+    error += checkOutput(
+        "ALU without immediate",
+        status,
+        outBuffer,
+        "   0, 0, 0\n"
+        "lbl1_bgn:\n"
+        "   0, 0, 0\n"
+        "   0, 0, 0\n"
+        "   0, 0, 0\n"
+        "lbl1_end:\n"
+        "\n"
+        "FOR (2, 5) UOP (lbl1_bgn, lbl1_end)\n"
+        "ALU.ADD(DST[1:4], SRC[1:4])\n"
+        "\n",
+        verbose
+    );
+
+    return error;
+}
+
+
+static int dTest_gemm(int verbose)
+{
+    printHeader("DISASSEMBLER", "Check GEMM disassembly");
+
+    int error;
+    error = 0;
+
+    VTAGemInsn insn;
+    char outBuffer[OUT_BUF_SIZE];
+
+    VTAUop uopBuffer[5];
+    memset(uopBuffer, 0, sizeof(uopBuffer));
+
+    printTestName(verbose, "Normal GEMM");
+
+    memset(&insn, 0, sizeof(insn));
+    memset(outBuffer, 0, sizeof(outBuffer));
+
+    insn.opcode = VTA_OPCODE_GEMM;
+    insn.uop_bgn    = 0;
+    insn.uop_end    = 3;
+    insn.iter_out   = 2;
+    insn.iter_in    = 4;
+    insn.reset_reg  = 0;
+
+    VTAErr status = vtaDisassemble(
+        (VTAGenericInsn *)&insn,
+        1,
+        uopBuffer,
+        3,
+        outBuffer,
+        sizeof(outBuffer)
+    );
+
+    error += checkOutput(
+        "GEMM",
+        status,
+        outBuffer,
+        "lbl1_bgn:\n"
+        "   0, 0, 0\n"
+        "   0, 0, 0\n"
+        "   0, 0, 0\n"
+        "lbl1_end:\n"
+        "\n"
+        "FOR (2, 4) UOP (lbl1_bgn, lbl1_end)\n"
+        "GEMM(ACC[0:3], INP[0:3], WGT[0:3])\n"
+        "\n",
+        verbose
+    );
+
+
+    printTestName(verbose, "GEMM reset");
+
+    memset(&insn, 0, sizeof(insn));
+    memset(outBuffer, 0, sizeof(outBuffer));
+
+    insn.opcode = VTA_OPCODE_GEMM;
+    insn.uop_bgn = 2;
+    insn.uop_end = 5;
+    insn.iter_out = 1;
+    insn.iter_in = 6;
+    insn.reset_reg = 1;
+
+    status = vtaDisassemble(
+        (VTAGenericInsn *)&insn,
+        1,
+        uopBuffer,
+        5,
+        outBuffer,
+        sizeof(outBuffer)
+    );
+
+    error += checkOutput(
+        "GEMM.RST",
+        status,
+        outBuffer,
+        "   0, 0, 0\n"
+        "   0, 0, 0\n"
+        "lbl1_bgn:\n"
+        "   0, 0, 0\n"
+        "   0, 0, 0\n"
+        "   0, 0, 0\n"
+        "lbl1_end:\n"
+        "\n"
+        "FOR (1, 6) UOP (lbl1_bgn, lbl1_end)\n"
+        "GEMM.RST(ACC[2:5])\n"
+        "\n",
+        verbose
+    );
+
+    return error;
+}
+
+
+
+static int dTest_dependencies(int verbose)
+{
+    printHeader("DISASSEMBLER", "Check POP / PUSH dependecy output");
+
+    int error;
+    error = 0;
+
+    char outBuffer[OUT_BUF_SIZE];
+
+    VTAUop gemmUopBuffer[1];
+    memset(gemmUopBuffer, 0, sizeof(gemmUopBuffer));
+
+    /*
+     * Current disassembler mapping:
+     * POP  -> EX->LD
+     * PUSH -> LD->EX
+     */
+    printTestName(verbose, "LOAD dependency");
+
+    VTAMemInsn load;
+    memset(&load, 0, sizeof(load));
+    memset(outBuffer, 0, sizeof(outBuffer));
+
+    load.opcode         = VTA_OPCODE_LOAD;
+    load.memory_type    = VTA_MEM_ID_UOP;
+    load.sram_base      = 1;
+    load.dram_base      = 2;
+    load.x_size         = 3;
+
+    load.pop_prev_dep   = 1;
+    load.push_prev_dep  = 1;
+
+    VTAErr status = vtaDisassemble(
+        (VTAGenericInsn *)&load,
+        1,
+        NULL,
+        0,
+        outBuffer,
+        sizeof(outBuffer)
+    );
+
+    error += checkOutput(
+        "LOAD dependencies",
+        status,
+        outBuffer,
+        "POP (EX->LD)\n"
+        "LOAD(UOP[1], MEM[2, 3])\n"
+        "PUSH (LD->EX)\n\n",
+        verbose
+    );
+
+
+    /*
+     * Current disassembler mapping:
+     * POP  -> EX->ST
+     * PUSH -> ST->EX
+    */
+    printTestName(verbose, "STORE dependency");
+
+    VTAMemInsn store;
+    memset(&store, 0, sizeof(store));
+    memset(outBuffer, 0, sizeof(outBuffer));
+
+    store.opcode = VTA_OPCODE_STORE;
+    store.sram_base = 4;
+    store.dram_base = 10;
+    store.y_size = 1;
+    store.x_size = 2;
+    store.x_stride = 2;
+
+    store.pop_prev_dep = 1;
+    store.push_prev_dep = 1;
+
+    status = vtaDisassemble(
+        (VTAGenericInsn *)&store,
+        1,
+        NULL,
+        0,
+        outBuffer,
+        sizeof(outBuffer)
+    );
+
+    error += checkOutput(
+        "STORE dependencies",
+        status,
+        outBuffer,
+        "POP (EX->ST)\n"
+        "STOR(MEM[10, 1, 2, 2], ACC[4])\n"
+        "PUSH (ST->EX)\n\n",
+        verbose
+    );
+
+
+    /*
+     * All four dependency bits are active.
+     */
+    printTestName(verbose, "GEMM dependency");
+
+    VTAGemInsn gemm;
+    memset(&gemm, 0, sizeof(gemm));
+    memset(outBuffer, 0, sizeof(outBuffer));
+
+    gemm.opcode     = VTA_OPCODE_GEMM;
+    gemm.uop_bgn    = 0;
+    gemm.uop_end    = 1;
+    gemm.iter_out   = 1;
+    gemm.iter_in    = 1;
+
+    gemm.pop_prev_dep   = 1;
+    gemm.pop_next_dep   = 1;
+    gemm.push_prev_dep  = 1;
+    gemm.push_next_dep  = 1;
+
+    status = vtaDisassemble(
+        (VTAGenericInsn *)&gemm,
+        1,
+        gemmUopBuffer,
+        1,
+        outBuffer,
+        sizeof(outBuffer)
+    );
+
+    error += checkOutput(
+        "GEMM dependencies",
+        status,
+        outBuffer,
+        "lbl1_bgn:\n"
+        "   0, 0, 0\n"
+        "lbl1_end:\n"
+        "\n"
+        "POP (LD->EX, ST->EX)\n"
+        "FOR (1, 1) UOP (lbl1_bgn, lbl1_end)\n"
+        "GEMM(ACC[0:1], INP[0:1], WGT[0:1])\n"
+        "PUSH (EX->LD, EX->ST)\n"
+        "\n",
+        verbose
+    );
+
+    return error;
+}
+
+
+/*-------------
+    TESTS FOR ASSEMBLER
+*/
+
+static int aTest_uopDetection(int verbose) 
+{
+    printHeader("ASSEMBLER", "Check assembler UOP detection");
+
+    printTestName(verbose, "Find the right UOPs and instructions");
+
+    int error;
+    error = 0;
+
+    VTAGenericInsn insnBuffer[8];
+    memset(insnBuffer, 0, sizeof(insnBuffer));
+
+    VTAUop uopBuffer[8];
+    memset(uopBuffer, 0, sizeof(uopBuffer));
+
+    const char *asmCode;
+    asmCode =
+        "LOAD(INP[0], MEM[100, 2, 8, 16])\n"
+        "10, 20, 30\n"
+        "FINISH\n";
+
+    int numInsn, numUop;
+    numInsn = 0;
+    numUop  = 0;
+
+    VTAErr status; 
+    status = vtaAssemble(asmCode, insnBuffer, 8, &numInsn, uopBuffer, 8, &numUop);
+
+    if (status != VTA_OK) 
+    {
+        if (verbose)
+        {
+            printf(" X! vtaAssemble(...) returned status [%d].\n", status);
+            vtaErrorPrint(status, -1);
+        }
+        else 
+        {
+            printf("X\n");
+        }
+
+        return 1;
+    }
+
+    if (numInsn != 2) 
+    {
+        printf((verbose) ? " X! Expected 2 instructions, got %d.\n" : "X\n", numInsn);
+        return 1;
+    }
+
+    if (numUop != 1) 
+    {
+        printf((verbose) ? " X! Expected 1 uop, got %d.\n" : "X\n", numUop);
+        return 1;
+    }
+
+    if (error == 0) 
+    {
+        printf((verbose) ? " ✔! Uop detection is independent from instruction params.\n" : "✔\n");
+    }
+
+    return error;
+}
+
+
+static int aTest_invalidUop(int verbose) 
+{
+    printHeader("ASSEMBLER", "Check invalid UOP syntax");
+
+    int error;
+    error = 0;
+
+    VTAGenericInsn insnBuffer[8];
+    memset(insnBuffer, 0, sizeof(insnBuffer));
+
+    VTAUop uopBuffer[8];
+    memset(uopBuffer, 0, sizeof(uopBuffer));
+
+    printTestName(verbose, "Invalid UOP syntax (10, 20), no third argument");
+
+    const char *asmCode;
+    asmCode = "10, 20\n";
+
+    int numInsn, numUop;
+    numInsn = 0;
+    numUop  = 0;
+
+    VTAErr status;
+    status = vtaAssemble(asmCode, insnBuffer, 8, &numInsn, uopBuffer, 8, &numUop);
+
+    if (status != VTA_ERR_SYNTAX) 
+    {
+        if (verbose)
+        {
+            printf(" X! Expected VTA_ERR_SYNTAX (%d), got %d.\n", VTA_ERR_SYNTAX, status);
+            vtaErrorPrint(status, -1);
+        }
+        else 
+        {
+            printf("X\n");
+        }
+
+        error++;
+    } 
+    else 
+    {
+        printf((verbose) ? " ✔! Invalid UOP syntax rejected correctly.\n" : "✔\n");
+    }
+
+    printTestName(verbose, "Too many arguments");
+
+    memset(insnBuffer, 0, sizeof(insnBuffer));
+    memset(uopBuffer, 0, sizeof(uopBuffer));
+
+    asmCode = "10, 20, 30, 40\n";
+    
+    numInsn = 0;
+    numUop  = 0;
+
+    status = vtaAssemble(asmCode, insnBuffer, 8, &numInsn, uopBuffer, 8, &numUop);
+
+    if (status != VTA_ERR_SYNTAX) 
+    {
+        if (verbose)
+        {
+            printf(" X! Expected VTA_ERR_SYNTAX (%d), got %d.\n", VTA_ERR_SYNTAX, status);
+            vtaErrorPrint(status, -1);
+        }
+        else
+            printf("X\n");
+        
+        error++;
+    } 
+    else 
+    {
+        printf((verbose) ? " ✔! Extra UOP field rejected correctly.\n" : "✔\n");
+    }
+    
+    return error;
+}
+
+
+static int aTest_simpleInstructions(int verbose)
+{
+    printHeader("ASSEMBLER", "Check FINISH and NOOP parsing");
+
+    printTestName(verbose, "Valid code (FINISH NOOP)");
+
+    int error;
+    error = 0;
+
+    VTAGenericInsn insnBuffer[8];
+    memset(insnBuffer, 0, sizeof(insnBuffer));
+
+    VTAUop uopBuffer[8];
+    memset(uopBuffer, 0, sizeof(uopBuffer));
+
+    const char *asmCode;
+    asmCode =
+        "FINISH\n"
+        "NOOP\n";
+
+    int numInsn = 0;
+    int numUop = 0;
+
+    VTAErr status;
+    status = vtaAssemble(asmCode, insnBuffer, 8, &numInsn, uopBuffer, 8, &numUop);
+
+    if (status != VTA_OK) 
+    {
+        if (verbose)
+        {
+            printf(" %s! vtaAssemble returned status [%d].\n", FAIL_CHAR, status);
+            vtaErrorPrint(status, -1);
+        }
+        else
+            printf("%s\n", FAIL_CHAR);
+        
+        return 1;
+    }
+
+    if (numInsn != 2) 
+    {
+        printf((verbose) ? " %s! Expected 2 instructions, got %d.\n" : "X\n", FAIL_CHAR, numInsn);
+        error++;
+    }
+
+    if (numUop != 0) 
+    {
+        printf((verbose) ? " %s! Expected 0 UOPs, got %d.\n" : "%s\n", FAIL_CHAR, numUop);
+        error++;
+    }
+
+    if (error == 0)
+        printf((verbose) ? " %s! FINISH and NOOP parsed correctly.\n" : "%s\n", PASS_CHAR);
+
+    printTestName(verbose, "Invalid code (FINISH(123))");
+
+    memset(insnBuffer, 0, sizeof(insnBuffer));
+    memset(uopBuffer, 0, sizeof(uopBuffer));
+
+    asmCode =
+        "FINISH(123)\n";
+
+    numInsn = 0;
+    numUop  = 0;
+
+    status = vtaAssemble(asmCode, insnBuffer, 8, &numInsn, uopBuffer, 8, &numUop);
+
+    if (status != VTA_ERR_SYNTAX) 
+    {
+        if (verbose) 
+        {
+            printf(" %s! Expected VTA_ERR_SYNTAX (%d), got %d.\n", FAIL_CHAR, VTA_ERR_SYNTAX, status);
+            vtaErrorPrint(status, -1);
+        }
+        else
+            printf("%s\n", FAIL_CHAR);
+
+        error++;
+    }
+    else {
+        printf((verbose) ? " %s! Invalid FINISH syntax rejected correctly.\n" : "%s\n", PASS_CHAR);
+    }
+
+    return error;
+}
+
+
+static int aTest_loadParsing(int verbose)
+{
+    printHeader("ASSEMBLER", "Check LOAD parsing");
+
+    int error;
+    error = 0;
+
+    VTAGenericInsn insnBuffer[8];
+    memset(insnBuffer, 0, sizeof(insnBuffer));
+
+    VTAUop uopBuffer[8];
+    memset(uopBuffer, 0, sizeof(uopBuffer));
+
+    printTestName(verbose, "Valid {LOAD(INP[], MEM[,,,])}");
+
+    const char *asmCode =
+        "LOAD(INP[4], MEM[100, 2, 8, 16])\n";
+
+    int numInsn, numUop;
+    numInsn = 0;
+    numUop  = 0;
+
+    VTAErr status;
+    status = vtaAssemble(asmCode, insnBuffer, 8, &numInsn, uopBuffer, 8, &numUop);
+
+    if (status != VTA_OK) 
+    {
+        if (verbose)
+        {
+            printf(" %s! LOAD returned status [%d].\n", FAIL_CHAR, status);
+            vtaErrorPrint(status, -1);
+        }
+        else
+            printf("%s\n", FAIL_CHAR);
+
+        return 1;
+    }
+
+    if (numInsn != 1) 
+    {
+        printf((verbose) ? " %s! Expected 1 instruction, got %d.\n" : "%s\n", FAIL_CHAR, numInsn);
+        error++;
+    }
+
+    if (numUop != 0) 
+    {
+        printf((verbose) ? " %s! Expected 0 UOPs, got %d.\n" : "%s\n", FAIL_CHAR, numUop);
+        error++;
+    }
+
+    if (error == 0) 
+    {
+        printf((verbose) ? " %s! LOAD syntax parsed correctly.\n" : "%s\n", PASS_CHAR);
+    }
+
+    printTestName(verbose, "Invalid buffer {LOAD(XYZ[], MEM[,,,])}");
+
+    memset(insnBuffer, 0, sizeof(insnBuffer));
+    memset(uopBuffer, 0, sizeof(uopBuffer));
+
+    asmCode =
+        "LOAD(XYZ[0], MEM[100, 2, 8, 16])\n";
+
+    numInsn = 0;
+    numUop  = 0;
+
+    status = vtaAssemble(asmCode, insnBuffer, 8, &numInsn, uopBuffer, 8, &numUop);
+
+    if (status != VTA_ERR_UNKNOWN_MNEMONIC) 
+    {
+        if (verbose) 
+        {
+            printf(" %s! Expected VTA_ERR_UNKNOWN_MNEMONIC (%d), got %d.\n", FAIL_CHAR, VTA_ERR_UNKNOWN_MNEMONIC, status);
+            vtaErrorPrint(status, -1);
+        }
+        else 
+            printf("%s\n", FAIL_CHAR);
+
+        return 1;
+    }
+
+    printf((verbose) ? " %s! Invalid LOAD memory type rejected correctly.\n" : "%s\n", PASS_CHAR);
+
+    printTestName(verbose, "Invalid arguments {LOAD(INP[], MEM[,,])}");
+
+    memset(insnBuffer, 0, sizeof(insnBuffer));
+    memset(uopBuffer, 0, sizeof(uopBuffer));
+
+    asmCode =
+        "LOAD(INP[0], MEM[100, 8])\n";
+
+    numInsn = 0;
+    numUop  = 0;
+
+    status = vtaAssemble(asmCode, insnBuffer, 8, &numInsn, uopBuffer, 8, &numUop);
+
+    if (status != VTA_ERR_SYNTAX) 
+    {
+        if (verbose) 
+        {
+            printf(" %s! Expected VTA_ERR_SYNTAX (%d), got %d.\n", FAIL_CHAR, VTA_ERR_SYNTAX, status);
+            vtaErrorPrint(status, -1); 
+        }
+        else
+            printf("%s\n", FAIL_CHAR);
+
+        return 1;
+    }
+
+    printf((verbose) ? " %s! Invalid LOAD arguments rejected correctly.\n" : "%s\n", PASS_CHAR);
+
+    return error;
+}
+
+
+static int aTest_loadEncoding(int verbose) 
+{
+    printHeader("ASSEMBLER", "Check the correct encoding of LOAD");
+
+    printTestName(verbose, "Correct LOAD instruction");
+
+    int error;
+    error = 0;
+
+    VTAGenericInsn  insnBuffer[8];
+    memset(insnBuffer, 0, sizeof(insnBuffer));
+
+    VTAUop uopBuffer[8];
+    memset(uopBuffer, 0, sizeof(uopBuffer));
+
+    const char *asmCode;
+    asmCode = "LOAD(INP[4], MEM[100, 2, 8, 16])\n";
+
+    int numInsn, numUop;
+    numInsn = 0;
+    numUop  = 0;
+
+    VTAErr status;
+    status = vtaAssemble(asmCode, insnBuffer, 8, &numInsn, uopBuffer, 8, &numUop);
+
+    if (status != VTA_OK) 
+    {
+        if (verbose)
+        {
+            printf(" %s! vtaAssemble(...) returned status [%d].\n", FAIL_CHAR, status);
+            vtaErrorPrint(status, -1);
+        }
+        else
+            printf("%s\n", FAIL_CHAR);
+
+        return 1;
+    }
+
+    if (numInsn != 1) 
+    {
+        printf((verbose) ? " %s! Expected 1 instruction, got %d.\n" : "%s\n", FAIL_CHAR, numInsn);
+        error++;
+    }
+
+    if (numUop != 0) 
+    {
+        printf((verbose) ? " %s! Expected 0 UOPs, got %d.\n" : "%s\n", FAIL_CHAR, numUop);
+        error++;
+    }
+
+    VTAMemInsn *insn;
+    insn = (VTAMemInsn *)&insnBuffer[0];
+
+    if (insn->opcode != VTA_OPCODE_LOAD) 
+    {
+        printf((verbose) ? " %s! Wrong opcode: got %u.\n" : "%s\n", FAIL_CHAR, (unsigned)insn->opcode);
+        error++;
+    }
+
+    if (insn->memory_type != VTA_MEM_ID_INP) 
+    {
+        printf((verbose) ? " %s! Wrong memory type, got %u.\n" : "%s\n", FAIL_CHAR, (unsigned)insn->memory_type);
+        error++;
+    }
+
+    if (insn->sram_base != 4) 
+    {
+        printf((verbose) ? " %s! Wrong sram_base, got %u.\n" : "%s\n", FAIL_CHAR, (unsigned)insn->sram_base);
+        error++;
+    }
+
+    if (insn->dram_base != 100) 
+    {
+        printf((verbose) ? " %s! Wrong dram_base: got %u.\n" : "%s\n", FAIL_CHAR, (unsigned)insn->dram_base);
+        error++;
+    }
+
+    if (insn->y_size != 2) 
+    {
+        printf((verbose) ? " %s! Wrong y_size: got %u.\n" : "%s\n", FAIL_CHAR, (unsigned)insn->y_size);
+        error++;
+    }
+
+    if (insn->x_size != 8) 
+    {
+        printf((verbose) ? " %s! Wrong x_size: got %u.\n" : "%s\n", FAIL_CHAR, (unsigned)insn->x_size);
+        error++;
+    }
+
+    if (insn->x_stride != 16) 
+    {
+        printf((verbose) ? " %s! Wrong x_stride: got %u.\n" : "%s\n", FAIL_CHAR, (unsigned)insn->x_stride);
+        error++;
+    }
+
+    if (error == 0)
+        printf((verbose) ? " %s! LOAD fields encoded correctly.\n" : "%s\n", PASS_CHAR);
+
+    return error;
+}
+
+
+static int aTest_uopEncoding(int verbose)
+{
+    printHeader("ASSEMBLER", "Check UOP binary encoding");
+
+    printTestName(verbose, "Valid UOP instruction");
+
+    int error;
+    error = 0;
+
+    VTAGenericInsn insnBuffer[8];
+    memset(insnBuffer, 0, sizeof(insnBuffer));
+
+    VTAUop uopBuffer[8];
+    memset(uopBuffer, 0, sizeof(uopBuffer));
+
+    const char *asmCode =
+        "10, 20, 30\n"
+        "11, 21, 31\n";
+
+    int numInsn, numUop;
+    numInsn = 0;
+    numUop = 0;
+
+    VTAErr status;
+    status = vtaAssemble(asmCode, insnBuffer, 8, &numInsn, uopBuffer, 8, &numUop);
+
+    if (status != VTA_OK) 
+    {
+        if (verbose) 
+        {
+            printf(" %s! vtaAssemble returned status [%d].\n", FAIL_CHAR, status);
+            vtaErrorPrint(status, -1);
+        }
+        else
+            printf("%s\n", FAIL_CHAR);
+
+        return 1;
+    }
+
+    if (numInsn != 0) 
+    {
+        printf((verbose) ? " %s! Expected 0 instructions, got %d.\n" : "%s\n", FAIL_CHAR, numInsn);
+        error++;
+    }
+
+    if (numUop != 2) 
+    {
+        printf((verbose) ? " %s! Expected 2 UOPs, got %d.\n" : "%s\n", FAIL_CHAR, numUop);
+        error++;
+    }
+
+    if (uopBuffer[0].dst_idx != 10) 
+    {
+        printf((verbose) ? " %s! UOP[0] wrong dst_idx: got %u.\n" : "%s\n", FAIL_CHAR, (unsigned)uopBuffer[0].dst_idx);
+        error++;
+    }
+
+    if (uopBuffer[0].src_idx != 20) 
+    {
+        printf((verbose) ? " %s! UOP[0] wrong src_idx: got %u.\n" : "%s\n", FAIL_CHAR, (unsigned)uopBuffer[0].src_idx);
+        error++;
+    }
+
+    if (uopBuffer[0].wgt_idx != 30) 
+    {
+        printf((verbose) ? " %s! UOP[0] wrong wgt_idx: got %u.\n" : "%s\n", FAIL_CHAR, (unsigned)uopBuffer[0].wgt_idx);
+        error++;
+    }
+
+    if (uopBuffer[1].dst_idx != 11) 
+    {
+        printf((verbose) ? " %s! UOP[1] wrong dst_idx: got %u.\n" : "%s\n", FAIL_CHAR, (unsigned)uopBuffer[1].dst_idx);
+        error++;
+    }
+
+    if (uopBuffer[1].src_idx != 21) 
+    {
+        printf((verbose) ? " %s! UOP[1] wrong src_idx: got %u.\n" : "%s\n", FAIL_CHAR, (unsigned)uopBuffer[1].src_idx);
+        error++;
+    }
+
+    if (uopBuffer[1].wgt_idx != 31) 
+    {
+        printf((verbose) ? " %s! UOP[1] wrong wgt_idx: got %u.\n" : "%s\n", FAIL_CHAR, (unsigned)uopBuffer[1].wgt_idx);
+        error++;
+    }
+
+    if (error == 0)
+        printf((verbose) ? " %s! UOP fields encoded correctly.\n" : "%s\n", PASS_CHAR);
+
+    return error;
+}
+
+
+static int aTest_storeEncoding(int verbose)
+{
+    printHeader("ASSEMBLER", "Check STORE binary encoding");
+
+    int error;
+    error = 0;
+
+    VTAGenericInsn insnBuffer[8];
+    memset(insnBuffer, 0, sizeof(insnBuffer));
+
+    VTAUop uopBuffer[8];
+    memset(uopBuffer, 0, sizeof(uopBuffer));
+
+    printTestName(verbose, "Valid STORE instruction");
+
+    const char *asmCode;
+    asmCode =
+        "STORE(MEM[200, 2, 8, 16], ACC[5])\n";
+
+    int numInsn, numUop;
+    numInsn = 0;
+    numUop = 0;
+
+    VTAErr status;
+    status = vtaAssemble(asmCode, insnBuffer, 8, &numInsn, uopBuffer, 8, &numUop);
+
+    if (status != VTA_OK) 
+    {
+        if (verbose) 
+        {
+            printf(" %s! vtaAssemble returned status [%d].\n", FAIL_CHAR, status);
+            vtaErrorPrint(status, -1);
+        }
+        else
+            printf("%s\n", FAIL_CHAR);
+
+        return 1;
+    }
+
+    if (numInsn != 1) 
+    {
+        printf((verbose) ? " %s! Expected 1 instruction, got %d.\n" : "%s\n", FAIL_CHAR, numInsn);
+        error++;
+    }
+
+    if (numUop != 0) {
+        printf((verbose) ? " %s! Expected 0 UOPs, got %d.\n" : "%s\n", FAIL_CHAR, numUop);
+        error++;
+    }
+
+    VTAMemInsn *insn;
+    insn = (VTAMemInsn *)&insnBuffer[0];
+
+    if (insn->opcode != VTA_OPCODE_STORE) 
+    {
+        printf((verbose) ? " %s! Wrong opcode: got %u.\n" : "%s\n", FAIL_CHAR, (unsigned)insn->opcode);
+        error++;
+    }
+
+    if (insn->sram_base != 5) 
+    {
+        printf((verbose) ? " %s! Wrong sram_base: got %u.\n" : "%s\n", FAIL_CHAR, (unsigned)insn->sram_base);
+        error++;
+    }
+
+    if (insn->dram_base != 200) 
+    {
+        printf((verbose) ? " %s! Wrong dram_base: got %u.\n" : "%s\n", FAIL_CHAR, (unsigned)insn->dram_base);
+        error++;
+    }
+
+    if (insn->y_size != 2) 
+    {
+        printf((verbose) ? " %s! Wrong y_size: got %u.\n" : "%s\n", FAIL_CHAR, (unsigned)insn->y_size);
+        error++;
+    }
+
+    if (insn->x_size != 8) 
+    {
+        printf((verbose) ? " %s! Wrong x_size: got %u.\n" : "%s\n", FAIL_CHAR, (unsigned)insn->x_size);
+        error++;
+    }
+
+    if (insn->x_stride != 16) 
+    {
+        printf((verbose) ? " %s! Wrong x_stride: got %u.\n" : "%s\n", FAIL_CHAR, (unsigned)insn->x_stride);
+        error++;
+    }
+
+    if (error == 0)
+        printf((verbose) ? " %s! STORE fields encoded correctly.\n" : "%s\n", PASS_CHAR);
+
+    return error;
+}
+
+
+static int aTest_gemmEnconding(int verbose) 
+{
+    printHeader("ASSEMBLER", "Check GEMM binary encoding");
+
+    int error;
+    error = 0;
+
+    VTAGenericInsn  insnBuffer[8];
+    memset(insnBuffer, 0, sizeof(insnBuffer));
+
+    VTAUop uopBuffer[8];
+    memset(uopBuffer, 0, sizeof(uopBuffer));
+
+    printTestName(verbose, "Valid GEMM instruction");
+
+    const char *asmCode;
+    asmCode =
+        "lbl1_bgn:\n"
+        "10, 20, 30\n"
+        "11, 21, 31\n"
+        "12, 22, 32\n"
+        "lbl1_end:\n"
+        "FOR (2, 4) UOP (lbl1_bgn, lbl1_end)\n"
+        "GEMM(ACC[0:3], INP[0:3], WGT[0:3])\n";
+
+    int numInsn, numUop;
+    numInsn = 0;
+    numUop  = 0;
+
+    VTAErr status;
+    status = vtaAssemble(asmCode, insnBuffer, 8, &numInsn, uopBuffer, 8, &numUop);
+
+    if (status != VTA_OK) 
+    {
+        printf((verbose) ? " %s! vtaAssemble returned status [%d].\n" : "%s\n", FAIL_CHAR, status);
+        vtaErrorPrint(status, -1);
+        return 1;
+    }
+
+    if (numInsn < 1) 
+    {
+        printf((verbose) ? " %s! Expected 1 instruction, got %d.\n" : "%s\n", FAIL_CHAR, numInsn);
+        error++;
+    }
+
+    if (numUop != 3) 
+    {
+        printf((verbose) ? " %s! Expected 3 UOPs, got %d.\n" : "%s\n", FAIL_CHAR, numUop);
+        error++;
+    }
+
+    VTAGemInsn *insn;
+    insn = (VTAGemInsn *)&insnBuffer[0];
+
+    if (insn->opcode != VTA_OPCODE_GEMM) 
+    {
+        printf((verbose) ? " %s! Wrong opcode: got %d.\n" : "%s\n", FAIL_CHAR, (unsigned)insn->opcode);
+        error++;
+    }
+
+    if (insn->uop_bgn != 0) 
+    {
+        printf((verbose) ? " %s! Wrong uop_bgn: got %d.\n" : "%s\n", FAIL_CHAR, (unsigned)insn->uop_bgn);
+        error++;
+    }
+
+    if (insn->uop_end != 3) 
+    {
+        printf((verbose) ? " %s! Wrong uop_end: got %u.\n" : "%s\n", FAIL_CHAR, (unsigned)insn->uop_end);
+        error++;
+    }
+
+    if (insn->iter_out != 2) 
+    {
+        printf((verbose) ? " %s! Wrong iter_out: got %u.\n" : "%s\n", FAIL_CHAR, (unsigned)insn->iter_out);
+        error++;
+    }
+
+    if (insn->iter_in != 4) 
+    {
+        printf((verbose) ? " %s! Wrong iter_in: got %u.\n" : "%s\n", FAIL_CHAR, (unsigned)insn->iter_in);
+        error++;
+    }
+
+    if (insn->reset_reg != 0) 
+    {
+        printf((verbose) ? " %s! Wrong reset_reg: got %u.\n" : "%s\n", FAIL_CHAR, (unsigned)insn->reset_reg);
+        error++;
+    }
+
+    if (error == 0)
+        printf((verbose) ? " %s! GEMM fields encoded correctly.\n" : "%s\n", PASS_CHAR);
+
+    printTestName(verbose, "GEMM label resolution");
+
+    memset(insnBuffer, 0, sizeof(insnBuffer));
+    memset(uopBuffer, 0, sizeof(uopBuffer));
+
+    asmCode = 
+        "lbl1_bgn:\n"
+        "10, 20, 30\n"
+        "11, 21, 31\n"
+        "12, 22, 32\n"
+        "lbl1_end:\n"
+        "FOR (2, 4) UOP (lbl1_bgn, lbl1_end)\n"
+        "GEMM(ACC[0:3], INP[0:3], WGT[0:3])\n";
+
+    numInsn = 0;
+    numUop  = 0;
+
+    status = vtaAssemble(asmCode, insnBuffer, 8, &numInsn, uopBuffer, 8, &numUop);
+
+    if (status != VTA_OK) 
+    {
+        if (verbose) 
+        {
+            printf((verbose) ? " %s! vtaAssemble returned status [%d].\n" : "%s\n", FAIL_CHAR, status);
+            vtaErrorPrint(status, -1);
+        }
+        else
+            printf("%s\n", FAIL_CHAR);
+
+        return 1;
+    }
+
+    if (numInsn != 1) 
+    {
+        printf((verbose) ? " %s! Expected 1 instruction, got %d.\n" : "%s\n", FAIL_CHAR, numInsn);
+        error++;
+    }
+
+    if (numUop != 3) 
+    {
+        printf((verbose) ? " %s! Expected 3 UOPs, got %d.\n" : "%s\n", FAIL_CHAR, numUop);
+        error++;
+    }
+
+    insn = (VTAGemInsn *)&insnBuffer[0];
+
+    if (insn->opcode != VTA_OPCODE_GEMM) 
+    {
+        printf((verbose) ? " %s! Wrong opcode: got %u.\n" : "%s\n", FAIL_CHAR, (unsigned)insn->opcode);
+        error++;
+    }
+
+    if (insn->uop_bgn != 0) 
+    {
+        printf((verbose) ? " %s! Expected uop_bgn = 0, got %u.\n" : "%s\n", FAIL_CHAR, (unsigned)insn->uop_bgn);
+        error++;
+    }
+
+    if (insn->uop_end != 3) 
+    {
+        printf((verbose) ? " %s! Expected uop_end = 3, got %u.\n" : "%s\n", FAIL_CHAR, (unsigned)insn->uop_end);
+        error++;
+    }
+
+    if (insn->iter_out != 2) 
+    {
+        printf((verbose) ? " %s! Expected iter_out = 2, got %u.\n" : "%s\n", FAIL_CHAR, (unsigned)insn->iter_out);
+        error++;
+    }
+
+    if (insn->iter_in != 4) 
+    {
+        printf((verbose) ? " %s! Expected iter_in = 4, got %u.\n" : "%s\n", FAIL_CHAR, (unsigned)insn->iter_in);
+        error++;
+    }
+
+    if (error == 0)
+        printf((verbose) ? " %s! GEMM labels resolved correctly.\n" : "%s\n", PASS_CHAR);
+
+
+    printTestName(verbose, "Check GEMM.RST binary encoding");
+
+    memset(insnBuffer, 0, sizeof(insnBuffer));
+    memset(uopBuffer, 0, sizeof(uopBuffer));
+
+    asmCode =
+        "lbl1_bgn:\n"
+        "10, 20, 30\n"
+        "11, 21, 31\n"
+        "12, 22, 32\n"
+        "lbl1_end:\n"
+        "FOR (1, 6) UOP (lbl1_bgn, lbl1_end)\n"
+        "GEMM.RST(ACC[0:3])\n";
+
+    numInsn = 0;
+    numUop  = 0;
+
+    status = vtaAssemble(asmCode, insnBuffer, 8, &numInsn, uopBuffer, 8, &numUop);
+
+    if (status != VTA_OK) 
+    {
+        if (verbose) 
+        {
+            printf((verbose) ? " %s! vtaAssemble returned status [%d].\n" : "%s\n", FAIL_CHAR, status);
+            vtaErrorPrint(status, -1);
+        }
+        else
+            printf("%s\n", FAIL_CHAR);
+
+        return 1;
+    }
+
+    if (numInsn != 1)
+    {
+        printf((verbose) ? " %s! Expected 1 instruction, got %d.\n" : "%s\n", FAIL_CHAR, numInsn);
+        error++;
+    }
+
+    if (numUop != 3) 
+    {
+        printf((verbose) ? " %s! Expected 3 UOPs, got %d.\n" : "%s\n", FAIL_CHAR, numUop);
+        error++;
+    }
+
+    insn = (VTAGemInsn *)&insnBuffer[0];
+
+    if (insn->opcode != VTA_OPCODE_GEMM) 
+    {
+        printf((verbose) ? " %s! Wrong opcode: got %u.\n" : "%s\n", FAIL_CHAR, (unsigned)insn->opcode);
+        error++;
+    }
+
+    if (insn->reset_reg != 1) 
+    {
+        printf((verbose) ? " %s! Expected reset_reg = 1, got %u.\n" : "%s\n", FAIL_CHAR, (unsigned)insn->reset_reg);
+        error++;
+    }
+
+    if (insn->uop_bgn != 0) 
+    {
+        printf((verbose) ? " %s! Expected uop_bgn = 0, got %u.\n" : "%s\n", FAIL_CHAR, (unsigned)insn->uop_bgn);
+        error++;
+    }
+
+    if (insn->uop_end != 3) 
+    {
+        printf((verbose) ? " %s! Expected uop_end = 3, got %u.\n" : "%s\n", FAIL_CHAR, (unsigned)insn->uop_end);
+        error++;
+    }
+
+    if (insn->iter_out != 1) 
+    {
+        printf((verbose) ? " %s! Expected iter_out = 1, got %u.\n" : "%s\n", FAIL_CHAR, (unsigned)insn->iter_out);
+        error++;
+    }
+
+    if (insn->iter_in != 6) 
+    {
+        printf((verbose) ? " %s! Expected iter_in = 6, got %u.\n" : "%s\n", FAIL_CHAR, (unsigned)insn->iter_in);
+        error++;
+    }
+
+    if (error == 0)
+        printf((verbose) ? " %s! GEMM.RST fields encoded correctly.\n" : "%s\n", PASS_CHAR);
+
+    return error;
+}
+
+
+static int aTest_aluEncoding(int verbose)
+{
+    printHeader("ASSEMBLER", "Check ALU binary encoding");
+    
+    printTestName(verbose, "Valid ALU instruction");
+
+    int error;
+    error = 0;
+
+    const char *opNames[] = {
+        "ALU.MIN",
+        "ALU.MAX",
+        "ALU.ADD",
+        "ALU.SHR"
+    };
+
+    uint32_t expectedOpcodes[] = {
+        VTA_ALU_OPCODE_MIN,
+        VTA_ALU_OPCODE_MAX,
+        VTA_ALU_OPCODE_ADD,
+        VTA_ALU_OPCODE_SHR
+    };
+
+    for (int i = 0; i < 4; i++) 
+    {
+        VTAGenericInsn insnBuffer[8];
+        memset(insnBuffer, 0, sizeof(insnBuffer));
+
+        VTAUop uopBuffer[8];
+        memset(uopBuffer, 0, sizeof(uopBuffer));
+
+        char asmCode[256];
+        snprintf(
+            asmCode,
+            sizeof(asmCode),
+            "lbl1_bgn:\n"
+            "10, 20, 30\n"
+            "11, 21, 31\n"
+            "12, 22, 32\n"
+            "lbl1_end:\n"
+            "FOR (3, 5) UOP (lbl1_bgn, lbl1_end)\n"
+            "%s(DST[0:3], -7)\n",
+            opNames[i]
+        );
+
+        int numInsn, numUop;
+        numInsn = 0;
+        numUop = 0;
+
+        VTAErr status;
+        status = vtaAssemble(
+            asmCode,
+            insnBuffer,
+            8,
+            &numInsn,
+            uopBuffer,
+            8,
+            &numUop
+        );
+
+        if (status != VTA_OK) 
+        {
+            if (verbose)
+            {
+                printf((verbose) ? " %s! %s returned status [%d].\n" : "%s\n", FAIL_CHAR, opNames[i], status);
+                vtaErrorPrint(status, -1);
+            }
+            else
+                printf("%s\n", FAIL_CHAR);
+
+            error++;
+            continue;
+        }
+
+        VTAAluInsn *insn = (VTAAluInsn *)&insnBuffer[0];
+
+        if (numInsn != 1) 
+        {
+            printf((verbose) ? " %s! %s: expected 1 instruction, got %d.\n" : "%s\n", FAIL_CHAR, opNames[i], numInsn);
+            error++;
+        }
+
+        if (numUop != 3) 
+        {
+            printf((verbose) ? " %s! %s: expected 3 UOPs, got %d.\n" : "%s\n", FAIL_CHAR, opNames[i], numUop);
+            error++;
+        }
+
+        if (insn->opcode != VTA_OPCODE_ALU) 
+        {
+            printf((verbose) ? " %s! %s: wrong opcode: got %u.\n" : "%s\n", FAIL_CHAR, opNames[i], (unsigned)insn->opcode);
+            error++;
+        }
+
+        if (insn->alu_opcode != expectedOpcodes[i]) 
+        {
+            printf(
+                (verbose) ? " %s! %s: wrong ALU opcode: got %u, expected %u.\n" : "%s\n", FAIL_CHAR,
+                opNames[i],
+                (unsigned)insn->alu_opcode,
+                (unsigned)expectedOpcodes[i]
+            );
+            error++;
+        }
+
+        if (insn->uop_bgn != 0 || insn->uop_end != 3) 
+        {
+            printf(
+                (verbose) ? " %s! %s: wrong UOP range [%u:%u].\n" : "%s\n", FAIL_CHAR,
+                opNames[i],
+                (unsigned)insn->uop_bgn,
+                (unsigned)insn->uop_end
+            );
+            error++;
+        }
+
+        if (insn->iter_out != 3 || insn->iter_in != 5) 
+        {
+            printf(
+                (verbose) ? " %s! %s: wrong iterators (%u, %u).\n" : "%s\n", FAIL_CHAR,
+                opNames[i],
+                (unsigned)insn->iter_out,
+                (unsigned)insn->iter_in
+            );
+            error++;
+        }
+
+        if (insn->reset_reg != 0) 
+        {
+            printf((verbose) ? " %s! %s: reset_reg should be 0, got %u.\n" : "%s\n", FAIL_CHAR, opNames[i], (unsigned)insn->reset_reg);
+            error++;
+        }
+
+        if (insn->use_imm != 1) 
+        {
+            printf((verbose) ? " %s! %s: expected immediate mode.\n" : "%s\n", FAIL_CHAR, opNames[i]);
+            error++;
+        }
+
+        if (insn->imm != -7) 
+        {
+            printf((verbose) ? " %s! %s: wrong immediate: got %d.\n" : "%s\n", FAIL_CHAR, opNames[i], (int)insn->imm);
+            error++;
+        }
+    }
+
+    if (error == 0)
+        printf((verbose) ? " %s! All ALU opcodes encoded correctly.\n" : "%s\n", PASS_CHAR);
+
+    return error;
+}
+
+
+static int aTest_aluSrcEncoding(int verbose)
+{
+    printHeader("ASSEMBLER", "Check ALU SRC encoding");
+
+    int error;
+    error = 0;
+
+    VTAGenericInsn insnBuffer[8];
+    memset(insnBuffer, 0, sizeof(insnBuffer));
+
+    VTAUop uopBuffer[8];
+    memset(uopBuffer, 0, sizeof(uopBuffer));
+
+    const char *asmCode;
+    asmCode =
+        "lbl1_bgn:\n"
+        "10, 20, 30\n"
+        "11, 21, 31\n"
+        "12, 22, 32\n"
+        "lbl1_end:\n"
+        "FOR (2, 4) UOP (lbl1_bgn, lbl1_end)\n"
+        "ALU.ADD(DST[0:3], SRC[0:3])\n";
+
+    int numInsn, numUop;
+    numInsn = 0;
+    numUop = 0;
+
+    VTAErr status;
+    status = vtaAssemble(
+        asmCode,
+        insnBuffer,
+        8,
+        &numInsn,
+        uopBuffer,
+        8,
+        &numUop
+    );
+
+    if (status != VTA_OK) 
+    {
+        printf((verbose) ? " %s! ALU.ADD SRC returned status [%d].\n" : "%s\n", FAIL_CHAR, status);
+        vtaErrorPrint(status, -1);
+        return 1;
+    }
+
+    VTAAluInsn *insn = (VTAAluInsn *)&insnBuffer[0];
+
+    if (numInsn != 1) 
+    {
+        printf((verbose) ? " %s! Expected 1 instruction, got %d.\n" : "%s\n", FAIL_CHAR, numInsn);
+        error++;
+    }
+
+    if (numUop != 3) 
+    {
+        printf((verbose) ? " %s! Expected 3 UOPs, got %d.\n" : "%s\n", FAIL_CHAR, numUop);
+        error++;
+    }
+
+    if (insn->opcode != VTA_OPCODE_ALU) 
+    {
+        printf((verbose) ? " %s! Wrong opcode: got %u.\n" : "%s\n", FAIL_CHAR, (unsigned)insn->opcode);
+        error++;
+    }
+
+    if (insn->alu_opcode != VTA_ALU_OPCODE_ADD) 
+    {
+        printf((verbose) ? " %s! Wrong ALU opcode: got %u.\n" : "%s\n", FAIL_CHAR, (unsigned)insn->alu_opcode);
+        error++;
+    }
+
+    if (insn->uop_bgn != 0 || insn->uop_end != 3) 
+    {
+        printf(
+            (verbose) ? " %s! Wrong UOP range [%u:%u].\n" : "%s\n", FAIL_CHAR,
+            (unsigned)insn->uop_bgn,
+            (unsigned)insn->uop_end
+        );
+        error++;
+    }
+
+    if (insn->iter_out != 2 || insn->iter_in != 4) 
+    {
+        printf(
+            (verbose) ? " %s! Wrong iterators (%u, %u).\n" : "%s\n", FAIL_CHAR,
+            (unsigned)insn->iter_out,
+            (unsigned)insn->iter_in
+        );
+        error++;
+    }
+
+    if (insn->use_imm != 0) 
+    {
+        printf((verbose) ? " %s! Expected SRC mode, but use_imm is %u.\n" : "%s\n", FAIL_CHAR, (unsigned)insn->use_imm);
+        error++;
+    }
+
+    if (error == 0)
+        printf((verbose) ? " %s! ALU SRC fields encoded correctly.\n" : "%s\n", PASS_CHAR);
+
+    return error;
+}
+
+
+static int aTest_dependencyEncoding(int verbose)
+{
+    printHeader("ASSEMBLER", "Check POP / PUSH dependency encoding");
+
+    int error;
+    error = 0;
+
+    VTAGenericInsn insnBuffer[8];
+    memset(insnBuffer, 0, sizeof(insnBuffer));
+
+    VTAUop uopBuffer[8];
+    memset(uopBuffer, 0, sizeof(uopBuffer));
+
+    /*
+     * 17.1 LOAD
+     *
+     * POP  EX->LD  -> pop_prev_dep
+     * PUSH LD->EX  -> push_prev_dep
+     */
+    printTestName(verbose, "Dependencies on LOAD");
+
+    const char *loadCode;
+    loadCode =
+        "POP (EX->LD)\n"
+        "LOAD(INP[4], MEM[100, 2, 8, 16])\n"
+        "PUSH (LD->EX)\n";
+
+    int numInsn, numUop;
+    numInsn = 0;
+    numUop  = 0;
+
+    VTAErr status;
+    status = vtaAssemble(
+        loadCode,
+        insnBuffer,
+        8,
+        &numInsn,
+        uopBuffer,
+        8,
+        &numUop
+    );
+
+    if (status != VTA_OK) 
+    {
+        if (verbose) 
+        {
+            printf((verbose) ? " %s! LOAD dependency encoding returned %d.\n" : "%s\n", FAIL_CHAR, status);
+            vtaErrorPrint(status, -1);
+        }
+        else
+            printf("%s\n", FAIL_CHAR);
+
+        return 1;
+    }
+
+    VTAMemInsn *load;
+    load = (VTAMemInsn *)&insnBuffer[0];
+
+    if (load->pop_prev_dep != 1) 
+    {
+        printf((verbose) ? " %s! LOAD pop_prev_dep expected 1, got %u.\n" : "%s\n", FAIL_CHAR,
+               (unsigned)load->pop_prev_dep);
+        error++;
+    }
+
+    if (load->pop_next_dep != 0) 
+    {
+        printf((verbose) ? " %s! LOAD pop_next_dep expected 0, got %u.\n" : "%s\n", FAIL_CHAR,
+               (unsigned)load->pop_next_dep);
+        error++;
+    }
+
+    if (load->push_prev_dep != 1) 
+    {
+        printf((verbose) ? " %s! LOAD push_prev_dep expected 1, got %u.\n" : "%s\n", FAIL_CHAR,
+               (unsigned)load->push_prev_dep);
+        error++;
+    }
+
+    if (load->push_next_dep != 0) 
+    {
+        printf((verbose) ? " %s! LOAD push_next_dep expected 0, got %u.\n" : "%s\n", FAIL_CHAR,
+               (unsigned)load->push_next_dep);
+        error++;
+    }
+
+    /*
+     * 17.2 STORE
+     *
+     * POP  EX->ST  -> pop_prev_dep
+     * PUSH ST->EX  -> push_prev_dep
+     */
+    printTestName(verbose, "Dependencies on STORE");
+
+    memset(insnBuffer, 0, sizeof(insnBuffer));
+    memset(uopBuffer, 0, sizeof(uopBuffer));
+
+    const char *storeCode;
+    storeCode =
+        "POP (EX->ST)\n"
+        "STORE(MEM[200, 2, 8, 16], ACC[5])\n"
+        "PUSH (ST->EX)\n";
+
+    numInsn = 0;
+    numUop  = 0;
+
+    status = vtaAssemble(
+        storeCode,
+        insnBuffer,
+        8,
+        &numInsn,
+        uopBuffer,
+        8,
+        &numUop
+    );
+
+    if (status != VTA_OK) 
+    {
+        if (verbose) 
+        {
+            printf((verbose) ? " %s! STORE dependency encoding returned %d.\n" : "%s\n", FAIL_CHAR, status);
+            vtaErrorPrint(status, -1);
+        }
+        else
+            printf("%s\n", FAIL_CHAR);
+
+        return 1;
+    }
+
+    VTAMemInsn *store;
+    store = (VTAMemInsn *)&insnBuffer[0];
+
+    if (store->pop_prev_dep != 1) 
+    {
+        printf((verbose) ? " %s! STORE pop_prev_dep expected 1, got %u.\n" : "%s\n", FAIL_CHAR,
+               (unsigned)store->pop_prev_dep);
+        error++;
+    }
+
+    if (store->pop_next_dep != 0) 
+    {
+        printf((verbose) ? " %s! STORE pop_next_dep expected 0, got %u.\n" : "%s\n", FAIL_CHAR,
+               (unsigned)store->pop_next_dep);
+        error++;
+    }
+
+    if (store->push_prev_dep != 1) 
+    {
+        printf((verbose) ? " %s! STORE push_prev_dep expected 1, got %u.\n" : "%s\n", FAIL_CHAR,
+               (unsigned)store->push_prev_dep);
+        error++;
+    }
+
+    if (store->push_next_dep != 0) 
+    {
+        printf((verbose) ? " %s! STORE push_next_dep expected 0, got %u.\n" : "%s\n", FAIL_CHAR,
+               (unsigned)store->push_next_dep);
+        error++;
+    }
+
+    /*
+     * 17.3 GEMM
+     *
+     * POP:
+     *   LD->EX -> pop_prev_dep
+     *   ST->EX -> pop_next_dep
+     *
+     * PUSH:
+     *   EX->LD -> push_prev_dep
+     *   EX->ST -> push_next_dep
+     */
+    printTestName(verbose, "Dependencies on GEMM");
+    
+    memset(insnBuffer, 0, sizeof(insnBuffer));
+    memset(uopBuffer, 0, sizeof(uopBuffer));
+
+    const char *gemmCode;
+    gemmCode =
+        "lbl_bgn:\n"
+        "10, 20, 30\n"
+        "11, 21, 31\n"
+        "12, 22, 32\n"
+        "lbl_end:\n"
+        "POP (LD->EX, ST->EX)\n"
+        "FOR (2, 4) UOP (lbl_bgn, lbl_end)\n"
+        "GEMM(ACC[0:3], INP[0:3], WGT[0:3])\n"
+        "PUSH (EX->LD, EX->ST)\n";
+
+    numInsn = 0;
+    numUop  = 0;
+
+    status = vtaAssemble(
+        gemmCode,
+        insnBuffer,
+        8,
+        &numInsn,
+        uopBuffer,
+        8,
+        &numUop
+    );
+
+    if (status != VTA_OK) 
+    {
+        if (verbose)
+        {
+            printf((verbose) ? " %s! GEMM dependency encoding returned %d.\n" : "%s\n", FAIL_CHAR, status);
+            vtaErrorPrint(status, -1);
+        }
+
+        return 1;
+    }
+
+    VTAGemInsn *gemm;
+    gemm = (VTAGemInsn *)&insnBuffer[0];
+
+    if (gemm->pop_prev_dep != 1) 
+    {
+        printf((verbose) ? " %s! GEMM pop_prev_dep expected 1, got %u.\n" : "%s\n", FAIL_CHAR,
+               (unsigned)gemm->pop_prev_dep);
+        error++;
+    }
+
+    if (gemm->pop_next_dep != 1) 
+    {
+        printf((verbose) ? " %s! GEMM pop_next_dep expected 1, got %u.\n" : "%s\n", FAIL_CHAR,
+               (unsigned)gemm->pop_next_dep);
+        error++;
+    }
+
+    if (gemm->push_prev_dep != 1) 
+    {
+        printf((verbose) ? " %s! GEMM push_prev_dep expected 1, got %u.\n" : "%s\n", FAIL_CHAR,
+               (unsigned)gemm->push_prev_dep);
+        error++;
+    }
+
+    if (gemm->push_next_dep != 1) 
+    {
+        printf((verbose) ? " %s! GEMM push_next_dep expected 1, got %u.\n" : "%s\n", FAIL_CHAR,
+               (unsigned)gemm->push_next_dep);
+        error++;
+    }
+
+    printTestName(verbose, "Dependencies on ALU");
+
+    memset(insnBuffer, 0, sizeof(insnBuffer));
+    memset(uopBuffer, 0, sizeof(uopBuffer));
+
+    const char *aluCode;
+    aluCode =
+        "lbl_bgn:\n"
+        "10, 20, 30\n"
+        "11, 21, 31\n"
+        "12, 22, 32\n"
+        "lbl_end:\n"
+        "POP (LD->EX, ST->EX)\n"
+        "FOR (2, 4) UOP (lbl_bgn, lbl_end)\n"
+        "ALU.ADD(DST[0:3], 7)\n"
+        "PUSH (EX->LD, EX->ST)\n";
+
+    numInsn = 0;
+    numUop  = 0;
+
+    status = vtaAssemble(
+        aluCode,
+        insnBuffer,
+        8,
+        &numInsn,
+        uopBuffer,
+        8,
+        &numUop
+    );
+
+    if (status != VTA_OK) 
+    {
+        if (verbose) 
+        {
+            printf((verbose) ? " %s! ALU dependency encoding returned %d.\n" : "%s\n", FAIL_CHAR, status);
+            vtaErrorPrint(status, -1);
+        }
+        else
+            printf("%s\n", FAIL_CHAR);
+
+        return 1;
+    }
+
+    VTAAluInsn *alu;
+    alu = (VTAAluInsn *)&insnBuffer[0];
+
+    if (alu->pop_prev_dep != 1) 
+    {
+        printf((verbose) ? " %s! ALU pop_prev_dep expected 1, got %u.\n" : "%s\n", FAIL_CHAR,
+               (unsigned)alu->pop_prev_dep);
+        error++;
+    }
+
+    if (alu->pop_next_dep != 1) 
+    {
+        printf((verbose) ? " %s! ALU pop_next_dep expected 1, got %u.\n" : "%s\n", FAIL_CHAR,
+               (unsigned)alu->pop_next_dep);
+        error++;
+    }
+
+    if (alu->push_prev_dep != 1) 
+    {
+        printf((verbose) ? " %s! ALU push_prev_dep expected 1, got %u.\n" : "%s\n", FAIL_CHAR,
+               (unsigned)alu->push_prev_dep);
+        error++;
+    }
+
+    if (alu->push_next_dep != 1) 
+    {
+        printf((verbose) ? " %s! ALU push_next_dep expected 1, got %u.\n" : "%s\n", FAIL_CHAR,
+               (unsigned)alu->push_next_dep);
+        error++;
+    }
+
+    if (error == 0)
+        printf((verbose) ? " %s! POP/PUSH dependencies encoded correctly.\n" : "%s\n", PASS_CHAR);
+
+    return error;
+}
+
+
+/*-----------
+    ROUND-TRIP TESTS
+*/
+
+
+static int rtTest_roundtripLoad(int verbose)
+{
+    printHeader("ROUND-TRIP", "Check LOAD assemble / disassemble");
 
     int error;
     error = 0;
@@ -1858,12 +2478,16 @@ static int test_roundtripLoad(void)
         &firstNumUop
     );
 
-    if (status != VTA_OK) {
-        printf(
-            " FAIL! First vtaAssemble returned status [%d].\n",
-            status
-        );
-        vtaErrorPrint(status, -1);
+    if (status != VTA_OK) 
+    {
+        if (verbose)
+        {
+            printf((verbose) ? " %s! First vtaAssemble returned status [%d].\n" : "%s\n", FAIL_CHAR, status); 
+            vtaErrorPrint(status, -1);
+        }
+        else
+            printf("%s\n", FAIL_CHAR);
+
         return 1;
     }
 
@@ -1879,16 +2503,20 @@ static int test_roundtripLoad(void)
         sizeof(disassembled)
     );
 
-    if (status != VTA_OK) {
-        printf(
-            " FAIL! vtaDisassemble returned status [%d].\n",
-            status
-        );
-        vtaErrorPrint(status, -1);
+    if (status != VTA_OK) 
+    {
+        if (verbose) 
+        {
+            printf((verbose) ? " %s! vtaDisassemble returned status [%d].\n" : "%s\n", FAIL_CHAR, status);
+            vtaErrorPrint(status, -1);
+        }
+        else
+            printf("%s\n", FAIL_CHAR);
+
         return 1;
     }
 
-    printf(" Generated assembly:\n%s\n", disassembled);
+    printf((verbose) ? " Generated assembly:\n%s\n" : "", disassembled);
 
     int secondNumInsn;
     int secondNumUop;
@@ -1906,30 +2534,28 @@ static int test_roundtripLoad(void)
         &secondNumUop
     );
 
-    if (status != VTA_OK) {
-        printf(
-            " FAIL! Second vtaAssemble returned status [%d].\n",
-            status
-        );
-        vtaErrorPrint(status, -1);
+    if (status != VTA_OK) 
+    {
+        if (verbose)
+        {
+            printf((verbose) ? " %s! Second vtaAssemble returned status [%d].\n" : "%s\n", FAIL_CHAR, status);
+            vtaErrorPrint(status, -1);
+        }
+        else
+            printf("%s\n", FAIL_CHAR);
+
         return 1;
     }
 
-    if (firstNumInsn != secondNumInsn) {
-        printf(
-            " FAIL! Instruction count changed: %d -> %d.\n",
-            firstNumInsn,
-            secondNumInsn
-        );
+    if (firstNumInsn != secondNumInsn) 
+    {
+        printf((verbose) ? " %s! Instruction count changed: %d -> %d.\n" : "%s\n", FAIL_CHAR, firstNumInsn, secondNumInsn);
         error++;
     }
 
-    if (firstNumUop != secondNumUop) {
-        printf(
-            " FAIL! UOP count changed: %d -> %d.\n",
-            firstNumUop,
-            secondNumUop
-        );
+    if (firstNumUop != secondNumUop) 
+    {
+        printf((verbose) ? " %s! UOP count changed: %d -> %d.\n" : "%s\n", FAIL_CHAR, firstNumUop, secondNumUop);
         error++;
     }
 
@@ -1939,61 +2565,70 @@ static int test_roundtripLoad(void)
     firstInsn = (VTAMemInsn *)&firstInsnBuffer[0];
     secondInsn = (VTAMemInsn *)&secondInsnBuffer[0];
 
-    if (firstInsn->opcode != secondInsn->opcode) {
-        printf(" FAIL! Opcode changed.\n");
+    if (firstInsn->opcode != secondInsn->opcode) 
+    {
+        printf((verbose) ? " %s! Opcode changed.\n" : "%s\n", FAIL_CHAR);
         error++;
     }
 
-    if (firstInsn->memory_type != secondInsn->memory_type) {
-        printf(" FAIL! Memory type changed.\n");
+    if (firstInsn->memory_type != secondInsn->memory_type) 
+    {
+        printf((verbose) ? " %s! Memory type changed.\n" : "%s\n", FAIL_CHAR);
         error++;
     }
 
-    if (firstInsn->sram_base != secondInsn->sram_base) {
-        printf(" FAIL! SRAM base changed.\n");
+    if (firstInsn->sram_base != secondInsn->sram_base) 
+    {
+        printf((verbose) ? " %s! SRAM base changed.\n" : "%s\n", FAIL_CHAR);
         error++;
     }
 
-    if (firstInsn->dram_base != secondInsn->dram_base) {
-        printf(" FAIL! DRAM base changed.\n");
+    if (firstInsn->dram_base != secondInsn->dram_base) 
+    {
+        printf((verbose) ? " %s! DRAM base changed.\n" : "%s\n", FAIL_CHAR);
         error++;
     }
 
-    if (firstInsn->y_size != secondInsn->y_size) {
-        printf(" FAIL! Y size changed.\n");
+    if (firstInsn->y_size != secondInsn->y_size) 
+    {
+        printf((verbose) ? " %s! Y size changed.\n" : "%s\n", FAIL_CHAR);
         error++;
     }
 
-    if (firstInsn->x_size != secondInsn->x_size) {
-        printf(" FAIL! X size changed.\n");
+    if (firstInsn->x_size != secondInsn->x_size) 
+    {
+        printf((verbose) ? " %s! X size changed.\n" : "%s\n", FAIL_CHAR);
         error++;
     }
 
-    if (firstInsn->x_stride != secondInsn->x_stride) {
-        printf(" FAIL! X stride changed.\n");
+    if (firstInsn->x_stride != secondInsn->x_stride) 
+    {
+        printf((verbose) ? " %s! X stride changed.\n" : "%s\n", FAIL_CHAR);
         error++;
     }
 
-    if (firstInsn->pop_prev_dep != secondInsn->pop_prev_dep) {
-        printf(" FAIL! POP dependency changed.\n");
+    if (firstInsn->pop_prev_dep != secondInsn->pop_prev_dep) 
+    {
+        printf((verbose) ? " %s! POP dependency changed.\n" : "%s\n", FAIL_CHAR);
         error++;
     }
 
-    if (firstInsn->push_prev_dep != secondInsn->push_prev_dep) {
-        printf(" FAIL! PUSH dependency changed.\n");
+    if (firstInsn->push_prev_dep != secondInsn->push_prev_dep) 
+    {
+        printf((verbose) ? " %s! PUSH dependency changed.\n" : "%s\n", FAIL_CHAR);
         error++;
     }
 
     if (error == 0)
-        printf(" PASS! LOAD round-trip preserved the instruction.\n");
+        printf((verbose) ? " %s! LOAD round-trip preserved the instruction.\n" : "%s\n", PASS_CHAR);
 
     return error;
 }
 
 
-static int test_roundtripGemm(void)
+static int rtTest_roundtripGemm(int verbose)
 {
-    printHeaderD("12. Check GEMM assemble/disassemble round-trip.");
+    printHeader("ROUND-TRIP", "Check GEMM assemble / disassemble");
 
     int error;
     error = 0;
@@ -2044,28 +2679,28 @@ static int test_roundtripGemm(void)
         &firstNumUop
     );
 
-    if (status != VTA_OK) {
-        printf(
-            " FAIL! First vtaAssemble returned status [%d].\n",
-            status
-        );
-        vtaErrorPrint(status, -1);
+    if (status != VTA_OK) 
+    {
+        if (verbose)
+        {
+            printf((verbose) ? " %s! First vtaAssemble returned status [%d].\n" : "%s\n", FAIL_CHAR, status);
+            vtaErrorPrint(status, -1);
+        }
+        else
+            printf("%s\n", FAIL_CHAR);
+
         return 1;
     }
 
-    if (firstNumInsn != 1) {
-        printf(
-            " FAIL! Expected 1 instruction, got %d.\n",
-            firstNumInsn
-        );
+    if (firstNumInsn != 1) 
+    {
+        printf((verbose) ? " %s! Expected 1 instruction, got %d.\n" : "%s\n", FAIL_CHAR, firstNumInsn);
         error++;
     }
 
-    if (firstNumUop != 3) {
-        printf(
-            " FAIL! Expected 3 UOPs, got %d.\n",
-            firstNumUop
-        );
+    if (firstNumUop != 3) 
+    {
+        printf((verbose) ? " %s! Expected 3 UOPs, got %d.\n" : "%s\n", FAIL_CHAR, firstNumUop);
         error++;
     }
 
@@ -2081,16 +2716,20 @@ static int test_roundtripGemm(void)
         sizeof(disassembled)
     );
 
-    if (status != VTA_OK) {
-        printf(
-            " FAIL! vtaDisassemble returned status [%d].\n",
-            status
-        );
-        vtaErrorPrint(status, -1);
+    if (status != VTA_OK) 
+    {
+        if (verbose)
+        {
+            printf((verbose) ? " %s! vtaDisassemble returned status [%d].\n" : "%s\n", FAIL_CHAR, status);
+            vtaErrorPrint(status, -1);
+        }
+        else
+            printf("%s\n", FAIL_CHAR);
+
         return 1;
     }
 
-    printf(" Generated assembly:\n%s\n", disassembled);
+    printf((verbose) ? " Generated assembly:\n%s\n" : "", disassembled);
 
     int secondNumInsn;
     int secondNumUop;
@@ -2108,30 +2747,28 @@ static int test_roundtripGemm(void)
         &secondNumUop
     );
 
-    if (status != VTA_OK) {
-        printf(
-            " FAIL! Second vtaAssemble returned status [%d].\n",
-            status
-        );
-        vtaErrorPrint(status, -1);
+    if (status != VTA_OK) 
+    {
+        if (verbose)
+        {
+            printf((verbose) ? " %s! Second vtaAssemble returned status [%d].\n" : "%s\n", FAIL_CHAR, status);
+            vtaErrorPrint(status, -1);
+        }
+        else
+            printf("%s\n", FAIL_CHAR);
+
         return 1;
     }
 
-    if (firstNumInsn != secondNumInsn) {
-        printf(
-            " FAIL! Instruction count changed: %d -> %d.\n",
-            firstNumInsn,
-            secondNumInsn
-        );
+    if (firstNumInsn != secondNumInsn) 
+    {
+        printf((verbose) ? " %s! Instruction count changed: %d -> %d.\n" : "%s\n", FAIL_CHAR, firstNumInsn, secondNumInsn);
         error++;
     }
 
-    if (firstNumUop != secondNumUop) {
-        printf(
-            " FAIL! UOP count changed: %d -> %d.\n",
-            firstNumUop,
-            secondNumUop
-        );
+    if (firstNumUop != secondNumUop) 
+    {
+        printf((verbose) ? " %s! UOP count changed: %d -> %d.\n" : "%s\n", FAIL_CHAR, firstNumUop, secondNumUop);
         error++;
     }
 
@@ -2144,78 +2781,92 @@ static int test_roundtripGemm(void)
     firstGemm = (VTAGemInsn *)&firstInsnBuffer[0];
     secondGemm = (VTAGemInsn *)&secondInsnBuffer[0];
 
-    if (firstGemm->opcode != secondGemm->opcode) {
-        printf(" FAIL! Opcode changed.\n");
+    if (firstGemm->opcode != secondGemm->opcode) 
+    {
+        printf((verbose) ? " %s! Opcode changed.\n" : "%s\n", FAIL_CHAR);
         error++;
     }
 
-    if (firstGemm->reset_reg != secondGemm->reset_reg) {
-        printf(" FAIL! reset_reg changed.\n");
+    if (firstGemm->reset_reg != secondGemm->reset_reg) 
+    {
+        printf((verbose) ? " %s! reset_reg changed.\n" : "%s\n", FAIL_CHAR);
         error++;
     }
 
-    if (firstGemm->uop_bgn != secondGemm->uop_bgn) {
-        printf(" FAIL! uop_bgn changed.\n");
+    if (firstGemm->uop_bgn != secondGemm->uop_bgn) 
+    {
+        printf((verbose) ? " %s! uop_bgn changed.\n" : "%s\n", FAIL_CHAR);
         error++;
     }
 
-    if (firstGemm->uop_end != secondGemm->uop_end) {
-        printf(" FAIL! uop_end changed.\n");
+    if (firstGemm->uop_end != secondGemm->uop_end) 
+    {
+        printf((verbose) ? " %s! uop_end changed.\n" : "%s\n", FAIL_CHAR);
         error++;
     }
 
-    if (firstGemm->iter_out != secondGemm->iter_out) {
-        printf(" FAIL! iter_out changed.\n");
+    if (firstGemm->iter_out != secondGemm->iter_out) 
+    {
+        printf((verbose) ? " %s! iter_out changed.\n" : "%s\n", FAIL_CHAR);
         error++;
     }
 
-    if (firstGemm->iter_in != secondGemm->iter_in) {
-        printf(" FAIL! iter_in changed.\n");
+    if (firstGemm->iter_in != secondGemm->iter_in) 
+    {
+        printf((verbose) ? " %s! iter_in changed.\n" : "%s\n", FAIL_CHAR);
         error++;
     }
 
-    if (firstGemm->dst_factor_out != secondGemm->dst_factor_out) {
-        printf(" FAIL! dst_factor_out changed.\n");
+    if (firstGemm->dst_factor_out != secondGemm->dst_factor_out) 
+    {
+        printf((verbose) ? " %s! dst_factor_out changed.\n" : "%s\n", FAIL_CHAR);
         error++;
     }
 
-    if (firstGemm->src_factor_out != secondGemm->src_factor_out) {
-        printf(" FAIL! src_factor_out changed.\n");
+    if (firstGemm->src_factor_out != secondGemm->src_factor_out) 
+    {
+        printf((verbose) ? " %s! src_factor_out changed.\n" : "%s\n", FAIL_CHAR);
         error++;
     }
 
-    if (firstGemm->wgt_factor_out != secondGemm->wgt_factor_out) {
-        printf(" FAIL! wgt_factor_out changed.\n");
+    if (firstGemm->wgt_factor_out != secondGemm->wgt_factor_out) 
+    {
+        printf((verbose) ? " %s! wgt_factor_out changed.\n" : "%s\n", FAIL_CHAR);
         error++;
     }
 
-    if (firstGemm->pop_prev_dep != secondGemm->pop_prev_dep) {
-        printf(" FAIL! pop_prev_dep changed.\n");
+    if (firstGemm->pop_prev_dep != secondGemm->pop_prev_dep) 
+    {
+        printf((verbose) ? " %s! pop_prev_dep changed.\n" : "%s\n", FAIL_CHAR);
         error++;
     }
 
-    if (firstGemm->pop_next_dep != secondGemm->pop_next_dep) {
-        printf(" FAIL! pop_next_dep changed.\n");
+    if (firstGemm->pop_next_dep != secondGemm->pop_next_dep) 
+    {
+        printf((verbose) ? " %s! pop_next_dep changed.\n" : "%s\n", FAIL_CHAR);
         error++;
     }
 
-    if (firstGemm->push_prev_dep != secondGemm->push_prev_dep) {
-        printf(" FAIL! push_prev_dep changed.\n");
+    if (firstGemm->push_prev_dep != secondGemm->push_prev_dep) 
+    {
+        printf((verbose) ? " %s! push_prev_dep changed.\n" : "%s\n", FAIL_CHAR);
         error++;
     }
 
-    if (firstGemm->push_next_dep != secondGemm->push_next_dep) {
-        printf(" FAIL! push_next_dep changed.\n");
+    if (firstGemm->push_next_dep != secondGemm->push_next_dep) 
+    {
+        printf((verbose) ? " %s! push_next_dep changed.\n" : "%s\n", FAIL_CHAR);
         error++;
     }
 
     /*
      * Compare all UOPs.
      */
-    for (int i = 0; i < firstNumUop && i < secondNumUop; i++) {
-        if (firstUopBuffer[i].dst_idx != secondUopBuffer[i].dst_idx) {
-            printf(
-                " FAIL! UOP[%d] dst_idx changed: %u -> %u.\n",
+    for (int i = 0; i < firstNumUop && i < secondNumUop; i++) 
+    {
+        if (firstUopBuffer[i].dst_idx != secondUopBuffer[i].dst_idx) 
+        {
+            printf((verbose) ? " %s! UOP[%d] dst_idx changed: %u -> %u.\n" : "%s\n", FAIL_CHAR,
                 i,
                 (unsigned)firstUopBuffer[i].dst_idx,
                 (unsigned)secondUopBuffer[i].dst_idx
@@ -2223,9 +2874,9 @@ static int test_roundtripGemm(void)
             error++;
         }
 
-        if (firstUopBuffer[i].src_idx != secondUopBuffer[i].src_idx) {
-            printf(
-                " FAIL! UOP[%d] src_idx changed: %u -> %u.\n",
+        if (firstUopBuffer[i].src_idx != secondUopBuffer[i].src_idx) 
+        {
+            printf((verbose) ? " %s! UOP[%d] src_idx changed: %u -> %u.\n" : "%s\n", FAIL_CHAR,
                 i,
                 (unsigned)firstUopBuffer[i].src_idx,
                 (unsigned)secondUopBuffer[i].src_idx
@@ -2233,9 +2884,9 @@ static int test_roundtripGemm(void)
             error++;
         }
 
-        if (firstUopBuffer[i].wgt_idx != secondUopBuffer[i].wgt_idx) {
-            printf(
-                " FAIL! UOP[%d] wgt_idx changed: %u -> %u.\n",
+        if (firstUopBuffer[i].wgt_idx != secondUopBuffer[i].wgt_idx) 
+        {
+            printf((verbose) ? " %s! UOP[%d] wgt_idx changed: %u -> %u.\n" : "%s\n", FAIL_CHAR,
                 i,
                 (unsigned)firstUopBuffer[i].wgt_idx,
                 (unsigned)secondUopBuffer[i].wgt_idx
@@ -2245,859 +2896,77 @@ static int test_roundtripGemm(void)
     }
 
     if (error == 0)
-        printf(" PASS! GEMM round-trip preserved instruction and UOPs.\n");
+        printf((verbose) ? " %s! GEMM round-trip preserved instruction and UOPs.\n" : "%s\n", PASS_CHAR);
 
     return error;
 }
 
 
-static int test_store(void) {
-    printHeaderD("11. Check STORE disassembly.");
-
-    VTAMemInsn insn;
-    char outBuffer[OUT_BUF_SIZE];
-
-    memset(&insn, 0, sizeof(insn));
-    memset(outBuffer, 0, sizeof(outBuffer));
-
-    insn.opcode     = VTA_OPCODE_STORE;
-    insn.sram_base  = 5;
-    insn.dram_base  = 200;
-    insn.y_size     = 2;
-    insn.x_size     = 8;
-    insn.x_stride   = 16;
-
-    VTAErr status;
-    status = vtaDisassemble((VTAGenericInsn *)&insn, 1, NULL, 0, outBuffer, sizeof(outBuffer));
-
-    return checkOutput("STORE", status, outBuffer, "STOR(MEM[200, 2, 8, 16], ACC[5])\n\n");
-}
 
 
-static int test_alu(void) {
-    printHeaderD("12. Check ALU disassembly.\n");
-
-    int error = 0;
-
-    VTAAluInsn insn;
-    char outBuffer[OUT_BUF_SIZE];
-
-    VTAUop uopBuffer[4];
-    memset(uopBuffer, 0, sizeof(uopBuffer));
-
-    printf(" 12.1 - ALU with intermediate.\n");
-
-    memset(&insn, 0, sizeof(insn));
-    memset(outBuffer, 0, sizeof(outBuffer));
-
-    insn.opcode     = VTA_OPCODE_ALU;
-    insn.alu_opcode = VTA_ALU_OPCODE_MIN;
-    insn.uop_bgn    = 0;
-    insn.uop_end    = 2;
-    insn.iter_out   = 3;
-    insn.iter_in    = 4;
-    insn.use_imm    = 1;
-    insn.imm        = -7;
-
-    VTAErr status;
-    status = vtaDisassemble((VTAGenericInsn *)&insn, 1, uopBuffer, 2, outBuffer, sizeof(outBuffer));
-
-    error += checkOutput(
-        "ALU with immediate",
-        status,
-        outBuffer,
-        "lbl1_bgn:\n"
-        "   0, 0, 0\n"
-        "   0, 0, 0\n"
-        "lbl1_end:\n"
-        "\n"
-        "FOR (3, 4) UOP (lbl1_bgn, lbl1_end)\n"
-        "ALU.MIN(DST[0:2], -7)\n"
-        "\n"
-    );
-    printf(" 12.2 - ALU without immediate.\n");
-
-    memset(&insn, 0, sizeof(insn));
-    memset(outBuffer, 0, sizeof(outBuffer));
-
-    insn.opcode     = VTA_OPCODE_ALU;
-    insn.alu_opcode = VTA_ALU_OPCODE_ADD;
-    insn.uop_bgn    = 1;
-    insn.uop_end    = 4;
-    insn.iter_out   = 2;
-    insn.iter_in    = 5;
-    insn.use_imm    = 0;
-
-    status = vtaDisassemble((VTAGenericInsn *)&insn, 1, uopBuffer, 4, outBuffer, sizeof(outBuffer));
-    
-    error += checkOutput(
-        "ALU without immediate",
-        status,
-        outBuffer,
-        "   0, 0, 0\n"
-        "lbl1_bgn:\n"
-        "   0, 0, 0\n"
-        "   0, 0, 0\n"
-        "   0, 0, 0\n"
-        "lbl1_end:\n"
-        "\n"
-        "FOR (2, 5) UOP (lbl1_bgn, lbl1_end)\n"
-        "ALU.ADD(DST[1:4], SRC[1:4])\n"
-        "\n"
-    );
-
-    return error;
-}
 
 
-static int test_roundtripAluImmediate(void)
+/* ---------
+    TEST RUNNERS
+*/
+
+static void disassembler_runTests(int *error, int verbose) 
 {
-    printHeaderD("Round-trip ALU immediate + dependencies.");
-
-    int error;
-    error = 0;
-
-    VTAGenericInsn firstInsnBuffer[8];
-    VTAGenericInsn secondInsnBuffer[8];
-
-    VTAUop firstUopBuffer[8];
-    VTAUop secondUopBuffer[8];
-
-    memset(firstInsnBuffer, 0, sizeof(firstInsnBuffer));
-    memset(secondInsnBuffer, 0, sizeof(secondInsnBuffer));
-    memset(firstUopBuffer, 0, sizeof(firstUopBuffer));
-    memset(secondUopBuffer, 0, sizeof(secondUopBuffer));
-
-    const char *asmCode;
-    asmCode =
-        "lbl1_bgn:\n"
-        "10, 20, 30\n"
-        "11, 21, 31\n"
-        "12, 22, 32\n"
-        "lbl1_end:\n"
-        "\n"
-        "POP (LD->EX, ST->EX)\n"
-        "FOR (3, 5) UOP (lbl1_bgn, lbl1_end)\n"
-        "ALU.ADD(DST[0:3], -7)\n"
-        "PUSH (EX->LD, EX->ST)\n";
-
-    int firstNumInsn;
-    int firstNumUop;
-
-    firstNumInsn = 0;
-    firstNumUop = 0;
-
-    VTAErr status;
-    status = vtaAssemble(
-        asmCode,
-        firstInsnBuffer,
-        8,
-        &firstNumInsn,
-        firstUopBuffer,
-        8,
-        &firstNumUop
-    );
-
-    if (status != VTA_OK) {
-        printf(
-            " FAIL! First vtaAssemble returned status [%d].\n",
-            status
-        );
-        vtaErrorPrint(status, -1);
-        return 1;
-    }
-
-    char disassembled[OUT_BUF_SIZE];
-    memset(disassembled, 0, sizeof(disassembled));
-
-    status = vtaDisassemble(
-        firstInsnBuffer,
-        firstNumInsn,
-        firstUopBuffer,
-        firstNumUop,
-        disassembled,
-        sizeof(disassembled)
-    );
-
-    if (status != VTA_OK) {
-        printf(
-            " FAIL! vtaDisassemble returned status [%d].\n",
-            status
-        );
-        vtaErrorPrint(status, -1);
-        return 1;
-    }
-
-    printf(" Generated assembly:\n%s\n", disassembled);
-
-    int secondNumInsn;
-    int secondNumUop;
-
-    secondNumInsn = 0;
-    secondNumUop = 0;
-
-    status = vtaAssemble(
-        disassembled,
-        secondInsnBuffer,
-        8,
-        &secondNumInsn,
-        secondUopBuffer,
-        8,
-        &secondNumUop
-    );
-
-    if (status != VTA_OK) {
-        printf(
-            " FAIL! Second vtaAssemble returned status [%d].\n",
-            status
-        );
-        vtaErrorPrint(status, -1);
-        return 1;
-    }
-
-    if (firstNumInsn != secondNumInsn) {
-        printf(
-            " FAIL! Instruction count changed: %d -> %d.\n",
-            firstNumInsn,
-            secondNumInsn
-        );
-        error++;
-    }
-
-    if (firstNumUop != secondNumUop) {
-        printf(
-            " FAIL! UOP count changed: %d -> %d.\n",
-            firstNumUop,
-            secondNumUop
-        );
-        error++;
-    }
-
-    VTAAluInsn *firstAlu;
-    VTAAluInsn *secondAlu;
-
-    firstAlu = (VTAAluInsn *)&firstInsnBuffer[0];
-    secondAlu = (VTAAluInsn *)&secondInsnBuffer[0];
-
-    if (firstAlu->opcode != secondAlu->opcode) {
-        printf(" FAIL! opcode changed.\n");
-        error++;
-    }
-
-    if (firstAlu->alu_opcode != secondAlu->alu_opcode) {
-        printf(
-            " FAIL! alu_opcode changed: %u -> %u.\n",
-            (unsigned)firstAlu->alu_opcode,
-            (unsigned)secondAlu->alu_opcode
-        );
-        error++;
-    }
-
-    if (firstAlu->uop_bgn != secondAlu->uop_bgn) {
-        printf(" FAIL! uop_bgn changed.\n");
-        error++;
-    }
-
-    if (firstAlu->uop_end != secondAlu->uop_end) {
-        printf(" FAIL! uop_end changed.\n");
-        error++;
-    }
-
-    if (firstAlu->iter_out != secondAlu->iter_out) {
-        printf(" FAIL! iter_out changed.\n");
-        error++;
-    }
-
-    if (firstAlu->iter_in != secondAlu->iter_in) {
-        printf(" FAIL! iter_in changed.\n");
-        error++;
-    }
-
-    if (firstAlu->use_imm != secondAlu->use_imm) {
-        printf(" FAIL! use_imm changed.\n");
-        error++;
-    }
-
-    if (firstAlu->imm != secondAlu->imm) {
-        printf(
-            " FAIL! immediate changed: %d -> %d.\n",
-            (int)firstAlu->imm,
-            (int)secondAlu->imm
-        );
-        error++;
-    }
-
-    if (firstAlu->pop_prev_dep != secondAlu->pop_prev_dep) {
-        printf(" FAIL! pop_prev_dep changed.\n");
-        error++;
-    }
-
-    if (firstAlu->pop_next_dep != secondAlu->pop_next_dep) {
-        printf(" FAIL! pop_next_dep changed.\n");
-        error++;
-    }
-
-    if (firstAlu->push_prev_dep != secondAlu->push_prev_dep) {
-        printf(" FAIL! push_prev_dep changed.\n");
-        error++;
-    }
-
-    if (firstAlu->push_next_dep != secondAlu->push_next_dep) {
-        printf(" FAIL! push_next_dep changed.\n");
-        error++;
-    }
-
-    /*
-     * Compare all UOPs.
-     */
-    for (int i = 0; i < firstNumUop && i < secondNumUop; i++) {
-        if (
-            firstUopBuffer[i].dst_idx !=
-            secondUopBuffer[i].dst_idx
-        ) {
-            printf(" FAIL! UOP[%d] dst_idx changed.\n", i);
-            error++;
-        }
-
-        if (
-            firstUopBuffer[i].src_idx !=
-            secondUopBuffer[i].src_idx
-        ) {
-            printf(" FAIL! UOP[%d] src_idx changed.\n", i);
-            error++;
-        }
-
-        if (
-            firstUopBuffer[i].wgt_idx !=
-            secondUopBuffer[i].wgt_idx
-        ) {
-            printf(" FAIL! UOP[%d] wgt_idx changed.\n", i);
-            error++;
-        }
-    }
-
-    if (error == 0)
-        printf(
-            " PASS! ALU immediate round-trip preserved "
-            "instruction and UOPs.\n"
-        );
-
-    return error;
+    *error += dTest_nullPointers(verbose);
+    *error += dTest_invalidOPCode(verbose);
+    *error += dTest_uopOutOfBounds(verbose);
+    *error += dTest_nullUopBuffer(verbose);
+    *error += dTest_labelReuse(verbose);
+    *error += dTest_outputBuffer(verbose);
+    *error += dTest_uopBufferSize(verbose);
+    *error += dTest_finish(verbose);
+    *error += dTest_noop(verbose);
+    *error += dTest_load(verbose);
+    *error += dTest_store(verbose);
+    *error += dTest_alu(verbose);
+    *error += dTest_gemm(verbose);
+    *error += dTest_dependencies(verbose);
 }
 
 
-static int test_roundtripAluSrc(void)
+static void assembler_runTests(int *error, int verbose) 
 {
-    printHeaderD("Round-trip ALU SRC + dependencies.");
-
-    int error;
-    error = 0;
-
-    VTAGenericInsn firstInsnBuffer[8];
-    VTAGenericInsn secondInsnBuffer[8];
-
-    VTAUop firstUopBuffer[8];
-    VTAUop secondUopBuffer[8];
-
-    memset(firstInsnBuffer, 0, sizeof(firstInsnBuffer));
-    memset(secondInsnBuffer, 0, sizeof(secondInsnBuffer));
-    memset(firstUopBuffer, 0, sizeof(firstUopBuffer));
-    memset(secondUopBuffer, 0, sizeof(secondUopBuffer));
-
-    const char *asmCode;
-    asmCode =
-        "lbl1_bgn:\n"
-        "10, 20, 30\n"
-        "11, 21, 31\n"
-        "12, 22, 32\n"
-        "lbl1_end:\n"
-        "\n"
-        "POP (LD->EX, ST->EX)\n"
-        "FOR (2, 4) UOP (lbl1_bgn, lbl1_end)\n"
-        "ALU.MAX(DST[0:3], SRC[0:3])\n"
-        "PUSH (EX->LD, EX->ST)\n";
-
-    int firstNumInsn;
-    int firstNumUop;
-
-    firstNumInsn = 0;
-    firstNumUop = 0;
-
-    VTAErr status;
-    status = vtaAssemble(
-        asmCode,
-        firstInsnBuffer,
-        8,
-        &firstNumInsn,
-        firstUopBuffer,
-        8,
-        &firstNumUop
-    );
-
-    if (status != VTA_OK) {
-        printf(
-            " FAIL! First vtaAssemble returned status [%d].\n",
-            status
-        );
-        vtaErrorPrint(status, -1);
-        return 1;
-    }
-
-    char disassembled[OUT_BUF_SIZE];
-    memset(disassembled, 0, sizeof(disassembled));
-
-    status = vtaDisassemble(
-        firstInsnBuffer,
-        firstNumInsn,
-        firstUopBuffer,
-        firstNumUop,
-        disassembled,
-        sizeof(disassembled)
-    );
-
-    if (status != VTA_OK) {
-        printf(
-            " FAIL! vtaDisassemble returned status [%d].\n",
-            status
-        );
-        vtaErrorPrint(status, -1);
-        return 1;
-    }
-
-    printf(" Generated assembly:\n%s\n", disassembled);
-
-    int secondNumInsn;
-    int secondNumUop;
-
-    secondNumInsn = 0;
-    secondNumUop = 0;
-
-    status = vtaAssemble(
-        disassembled,
-        secondInsnBuffer,
-        8,
-        &secondNumInsn,
-        secondUopBuffer,
-        8,
-        &secondNumUop
-    );
-
-    if (status != VTA_OK) {
-        printf(
-            " FAIL! Second vtaAssemble returned status [%d].\n",
-            status
-        );
-        vtaErrorPrint(status, -1);
-        return 1;
-    }
-
-    if (firstNumInsn != secondNumInsn) {
-        printf(
-            " FAIL! Instruction count changed: %d -> %d.\n",
-            firstNumInsn,
-            secondNumInsn
-        );
-        error++;
-    }
-
-    if (firstNumUop != secondNumUop) {
-        printf(
-            " FAIL! UOP count changed: %d -> %d.\n",
-            firstNumUop,
-            secondNumUop
-        );
-        error++;
-    }
-
-    VTAAluInsn *firstAlu;
-    VTAAluInsn *secondAlu;
-
-    firstAlu = (VTAAluInsn *)&firstInsnBuffer[0];
-    secondAlu = (VTAAluInsn *)&secondInsnBuffer[0];
-
-    if (firstAlu->opcode != secondAlu->opcode) {
-        printf(" FAIL! opcode changed.\n");
-        error++;
-    }
-
-    if (firstAlu->alu_opcode != secondAlu->alu_opcode) {
-        printf(" FAIL! alu_opcode changed.\n");
-        error++;
-    }
-
-    if (firstAlu->uop_bgn != secondAlu->uop_bgn) {
-        printf(" FAIL! uop_bgn changed.\n");
-        error++;
-    }
-
-    if (firstAlu->uop_end != secondAlu->uop_end) {
-        printf(" FAIL! uop_end changed.\n");
-        error++;
-    }
-
-    if (firstAlu->iter_out != secondAlu->iter_out) {
-        printf(" FAIL! iter_out changed.\n");
-        error++;
-    }
-
-    if (firstAlu->iter_in != secondAlu->iter_in) {
-        printf(" FAIL! iter_in changed.\n");
-        error++;
-    }
-
-    if (firstAlu->use_imm != secondAlu->use_imm) {
-        printf(" FAIL! use_imm changed.\n");
-        error++;
-    }
-
-    if (firstAlu->use_imm != 0) {
-        printf(" FAIL! Expected SRC mode, got immediate mode.\n");
-        error++;
-    }
-
-    if (firstAlu->pop_prev_dep != secondAlu->pop_prev_dep) {
-        printf(" FAIL! pop_prev_dep changed.\n");
-        error++;
-    }
-
-    if (firstAlu->pop_next_dep != secondAlu->pop_next_dep) {
-        printf(" FAIL! pop_next_dep changed.\n");
-        error++;
-    }
-
-    if (firstAlu->push_prev_dep != secondAlu->push_prev_dep) {
-        printf(" FAIL! push_prev_dep changed.\n");
-        error++;
-    }
-
-    if (firstAlu->push_next_dep != secondAlu->push_next_dep) {
-        printf(" FAIL! push_next_dep changed.\n");
-        error++;
-    }
-
-    for (int i = 0; i < firstNumUop && i < secondNumUop; i++) {
-        if (
-            firstUopBuffer[i].dst_idx !=
-            secondUopBuffer[i].dst_idx
-        ) {
-            printf(" FAIL! UOP[%d] dst_idx changed.\n", i);
-            error++;
-        }
-
-        if (
-            firstUopBuffer[i].src_idx !=
-            secondUopBuffer[i].src_idx
-        ) {
-            printf(" FAIL! UOP[%d] src_idx changed.\n", i);
-            error++;
-        }
-
-        if (
-            firstUopBuffer[i].wgt_idx !=
-            secondUopBuffer[i].wgt_idx
-        ) {
-            printf(" FAIL! UOP[%d] wgt_idx changed.\n", i);
-            error++;
-        }
-    }
-
-    if (error == 0)
-        printf(
-            " PASS! ALU SRC round-trip preserved "
-            "instruction and UOPs.\n"
-        );
-
-    return error;
+    *error += aTest_uopDetection(verbose);
+    *error += aTest_invalidUop(verbose);
+    *error += aTest_simpleInstructions(verbose);
+    *error += aTest_loadParsing(verbose);
+    *error += aTest_loadEncoding(verbose);
+    *error += aTest_uopEncoding(verbose);
+    *error += aTest_storeEncoding(verbose);
+    *error += aTest_gemmEnconding(verbose);
+    *error += aTest_aluEncoding(verbose);
+    *error += aTest_aluSrcEncoding(verbose);
+    *error += aTest_dependencyEncoding(verbose);
 }
 
 
-static int test_gemm(void)
+static void roundTrip_runTests(int *error, int verbose) 
 {
-    printHeaderD("13. Check GEMM disassembly.");
-
-    int error = 0;
-
-    VTAGemInsn insn;
-    char outBuffer[OUT_BUF_SIZE];
-
-    VTAUop uopBuffer[5];
-    memset(uopBuffer, 0, sizeof(uopBuffer));
-
-    printf(" 13.1 - Normal GEMM.\n");
-    memset(&insn, 0, sizeof(insn));
-    memset(outBuffer, 0, sizeof(outBuffer));
-
-    insn.opcode = VTA_OPCODE_GEMM;
-    insn.uop_bgn    = 0;
-    insn.uop_end    = 3;
-    insn.iter_out   = 2;
-    insn.iter_in    = 4;
-    insn.reset_reg  = 0;
-
-    VTAErr status = vtaDisassemble(
-        (VTAGenericInsn *)&insn,
-        1,
-        uopBuffer,
-        3,
-        outBuffer,
-        sizeof(outBuffer)
-    );
-
-    error += checkOutput(
-        "GEMM",
-        status,
-        outBuffer,
-        "lbl1_bgn:\n"
-        "   0, 0, 0\n"
-        "   0, 0, 0\n"
-        "   0, 0, 0\n"
-        "lbl1_end:\n"
-        "\n"
-        "FOR (2, 4) UOP (lbl1_bgn, lbl1_end)\n"
-        "GEMM(ACC[0:3], INP[0:3], WGT[0:3])\n"
-        "\n"
-    );
-
-
-    printf(" 13.2 - GEMM reset.\n");
-    memset(&insn, 0, sizeof(insn));
-    memset(outBuffer, 0, sizeof(outBuffer));
-
-    insn.opcode = VTA_OPCODE_GEMM;
-    insn.uop_bgn = 2;
-    insn.uop_end = 5;
-    insn.iter_out = 1;
-    insn.iter_in = 6;
-    insn.reset_reg = 1;
-
-    status = vtaDisassemble(
-        (VTAGenericInsn *)&insn,
-        1,
-        uopBuffer,
-        5,
-        outBuffer,
-        sizeof(outBuffer)
-    );
-
-    error += checkOutput(
-        "GEMM.RST",
-        status,
-        outBuffer,
-        "   0, 0, 0\n"
-        "   0, 0, 0\n"
-        "lbl1_bgn:\n"
-        "   0, 0, 0\n"
-        "   0, 0, 0\n"
-        "   0, 0, 0\n"
-        "lbl1_end:\n"
-        "\n"
-        "FOR (1, 6) UOP (lbl1_bgn, lbl1_end)\n"
-        "GEMM.RST(ACC[2:5])\n"
-        "\n"
-    );
-
-    return error;
+    *error += rtTest_roundtripLoad(verbose);
+    *error += rtTest_roundtripGemm(verbose);
 }
 
 
-static int test_dependencies(void)
+int main(void) 
 {
-    printHeaderD("14. Check POP/PUSH dependency output.");
+    int verbose, error;
+    verbose = 0;
+    error   = 0;
 
-    int error = 0;
-
-    char outBuffer[OUT_BUF_SIZE];
-
-    VTAUop gemmUopBuffer[1];
-    memset(gemmUopBuffer, 0, sizeof(gemmUopBuffer));
-
-    /*
-     * Current disassembler mapping:
-     * POP  -> EX->LD
-     * PUSH -> LD->EX
-     */
-    printf(" 14.1 - LOAD dep.\n");
-    VTAMemInsn load;
-    memset(&load, 0, sizeof(load));
-    memset(outBuffer, 0, sizeof(outBuffer));
-
-    load.opcode         = VTA_OPCODE_LOAD;
-    load.memory_type    = VTA_MEM_ID_UOP;
-    load.sram_base      = 1;
-    load.dram_base      = 2;
-    load.x_size         = 3;
-
-    load.pop_prev_dep = 1;
-    load.push_prev_dep = 1;
-
-    VTAErr status = vtaDisassemble(
-        (VTAGenericInsn *)&load,
-        1,
-        NULL,
-        0,
-        outBuffer,
-        sizeof(outBuffer)
-    );
-
-    error += checkOutput(
-        "LOAD dependencies",
-        status,
-        outBuffer,
-        "POP (EX->LD)\n"
-        "LOAD(UOP[1], MEM[2, 3])\n"
-        "PUSH (LD->EX)\n\n"
-    );
-
-
-    /*
-     * Current disassembler mapping:
-     * POP  -> EX->ST
-     * PUSH -> ST->EX
-    */
-    printf(" 14.2 - STORE dep.\n");
-    VTAMemInsn store;
-    memset(&store, 0, sizeof(store));
-    memset(outBuffer, 0, sizeof(outBuffer));
-
-    store.opcode = VTA_OPCODE_STORE;
-    store.sram_base = 4;
-    store.dram_base = 10;
-    store.y_size = 1;
-    store.x_size = 2;
-    store.x_stride = 2;
-
-    store.pop_prev_dep = 1;
-    store.push_prev_dep = 1;
-
-    status = vtaDisassemble(
-        (VTAGenericInsn *)&store,
-        1,
-        NULL,
-        0,
-        outBuffer,
-        sizeof(outBuffer)
-    );
-
-    error += checkOutput(
-        "STORE dependencies",
-        status,
-        outBuffer,
-        "POP (EX->ST)\n"
-        "STOR(MEM[10, 1, 2, 2], ACC[4])\n"
-        "PUSH (ST->EX)\n\n"
-    );
-
-
-    /*
-     * All four dependency bits are active.
-     */
-    printf("14.3 - GEMM dep.\n");
-    VTAGemInsn gemm;
-    memset(&gemm, 0, sizeof(gemm));
-    memset(outBuffer, 0, sizeof(outBuffer));
-
-    gemm.opcode = VTA_OPCODE_GEMM;
-    gemm.uop_bgn = 0;
-    gemm.uop_end = 1;
-    gemm.iter_out = 1;
-    gemm.iter_in = 1;
-
-    gemm.pop_prev_dep = 1;
-    gemm.pop_next_dep = 1;
-    gemm.push_prev_dep = 1;
-    gemm.push_next_dep = 1;
-
-    status = vtaDisassemble(
-        (VTAGenericInsn *)&gemm,
-        1,
-        gemmUopBuffer,
-        1,
-        outBuffer,
-        sizeof(outBuffer)
-    );
-
-    error += checkOutput(
-        "GEMM dependencies",
-        status,
-        outBuffer,
-        "lbl1_bgn:\n"
-        "   0, 0, 0\n"
-        "lbl1_end:\n"
-        "\n"
-        "POP (LD->EX, ST->EX)\n"
-        "FOR (1, 1) UOP (lbl1_bgn, lbl1_end)\n"
-        "GEMM(ACC[0:1], INP[0:1], WGT[0:1])\n"
-        "PUSH (EX->LD, EX->ST)\n"
-        "\n"
-    );
-
-    return error;
-}
-
-
-void executeTestsDisassembler(int *error) {
-    *error += test_nullPointers();
-    *error += test_invalidOPCode();
-    *error += test_uopOutOfBounds();
-    *error += test_nullUopBuffer();
-    *error += test_labelReuse();
-    *error += test_outputBuffer();
-    *error += test_uopBufferSize();
-    *error += test_finish();
-    *error += test_noop();
-    *error += test_load();
-    *error += test_roundtripLoad();
-    *error += test_roundtripGemm();
-    *error += test_roundtripAluImmediate();
-    *error += test_roundtripAluSrc();
-    *error += test_store();
-    *error += test_alu();
-    *error += test_gemm();
-    *error += test_dependencies();
-}
-
-
-int _executeD(void) {
-    int error;
-    error = 0;
-
-    printf("- STRESS TEST FOR VTA DISASSEMBLER.");
-
-    error += test_nullPointers();
-    error += test_invalidOPCode();
-    error += test_uopOutOfBounds();
-    error += test_nullUopBuffer();
-    error += test_labelReuse();
-    error += test_outputBuffer();
-    error += test_uopBufferSize();
-    error += test_finish();
-    error += test_noop();
-    error += test_load();
-    error += test_store();
-    error += test_alu();
-    error += test_gemm();
-    error += test_dependencies();
+    disassembler_runTests(&error, verbose);
+    assembler_runTests(&error, verbose);
+    roundTrip_runTests(&error, verbose);
 
     if (error > 0)
-        printf("X - NOT ALL TESTS HAVE PASSED (%d failures).\n", error);
+        printf("\nX - NOT ALL TESTS HAVE PASSED (%d failures).\n\n", error);
     else
-        printf("✔ - ALL TEST HAVE BEEN SUCCESSFULLY HANDLED!\n");
+        printf("\n✔ - ALL TEST HAVE BEEN SUCCESSFULLY HANDLED!\n\n");
 
-    return error;
-}
-
-
-int main(void) {
-    int error;
-    error = 0;
-
-    executeTestsDisassembler(&error);
-    executeTestsAssembler(&error);
-
-    if (error > 0)
-        printf("X - NOT ALL TESTS HAVE PASSED (%d failures).\n", error);
-    else
-        printf("✔ - ALL TEST HAVE BEEN SUCCESSFULLY HANDLED!\n");
-
-    return error;
+    printf(">> TEST SUITE COMPLETED.\n\n");
+    return 0;
 }

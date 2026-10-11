@@ -11,7 +11,8 @@
  * \brief STATUS code for VTA operations (for both disassembler and assembler).
  * \note VTA_OK = 0 guarantees success.
 */
-typedef enum {
+typedef enum 
+{
     VTA_OK = 0,
     VTA_ERR_NULLPTR,
     VTA_ERR_INVALID_INSN_SIZE,
