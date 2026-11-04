@@ -1,8 +1,11 @@
 # Build artifacts tvm
-3rparty/tvm/build/
+3rdparty/tvm/build/
 
 # Build my stuff
 build/
 *.o
 *.so
+
+
+old_src/
 

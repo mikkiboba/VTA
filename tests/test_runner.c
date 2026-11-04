@@ -2904,10 +2904,6 @@ static int rtTest_roundtripGemm(int verbose)
 }
 
 
-
-
-
-
 /* ---------
     TEST RUNNERS
 */
