@@ -107,7 +107,8 @@ void printBaselineStats(void)
     inputPackedBytes = OUTPUT_PIXELS * KERNEL_TAPS * BATCH * BLOCK * sizeof(int8_t);
 
     int depthwiseIdealWeightBytes;
-    depthwiseIdealWeightBytes = KERNEL_TAPS * BLOCK * sizeof(int8_t);
+    depthwiseIdealWeightBytes =
+        KERNEL_TAPS * BLOCK * sizeof(int8_t);
 
     int depthwiseBaselineWeightBytes;
     depthwiseBaselineWeightBytes =
@@ -117,11 +118,13 @@ void printBaselineStats(void)
     depthwiseDiagWeightBytes =
         KERNEL_TAPS * BLOCK * sizeof(int8_t);
 
-    int depthwiseSRAMWeightBytes;
-    depthwiseSRAMWeightBytes =
+    int depthwiseBaselineSRAMWeightBytes;
+    depthwiseBaselineSRAMWeightBytes =
         KERNEL_TAPS * BLOCK * BLOCK * sizeof(int8_t);
 
-
+    int depthwiseDiagSRAMWeightBytes;
+    depthwiseDiagSRAMWeightBytes =
+        KERNEL_TAPS * BLOCK * sizeof(int8_t);
 
     int depthwiseIdealMACs;
     depthwiseIdealMACs = OUTPUT_PIXELS * KERNEL_TAPS * BLOCK;
@@ -196,6 +199,10 @@ void printBaselineStats(void)
     printf("\nPointwise:\n");
     printf("Pointwise weights:              %d bytes\n", pointwiseWeightBytes);
     printf("Pointwise GEMM MACs:            %d\n", pointwiseMACs);
+
+    printf("\nSimulator measured MACs:\n");
+    printf("Dense scalar MACs:              %llu\n", (unsigned long long)VTAGetDenseMACCounter());
+    printf("Diagonal scalar MACs:           %llu\n", (unsigned long long)VTAGetDiagMACCounter());
 
     printf("\n");
 }
