@@ -462,7 +462,7 @@ class Device {
                         int32_t sum;
                         sum = acc.GetSigned(acc_offset);
 
-                        sum += inp.GetSigned(i * VTA_BLOCK_IN + j) * wgt.GetSigned(j);
+                        sum += inp.GetSigned(i * VTA_BLOCK_IN + j) * wgt_diag.GetSigned(j);
 
                         acc.SetSigned(acc_offset, sum);
                     }

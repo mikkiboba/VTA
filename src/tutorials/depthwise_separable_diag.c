@@ -171,8 +171,11 @@ void printBaselineStats(void)
            (double)depthwiseBaselineWeightBytes /
            depthwiseDiagWeightBytes);
 
-    printf("Expanded WGT SRAM footprint:    %d bytes\n", depthwiseSRAMWeightBytes);
+    printf("Baseline dense SRAM footprint:  %d bytes\n", depthwiseBaselineSRAMWeightBytes);
 
+    printf("B1 compact SRAM footprint:      %d bytes\n", depthwiseDiagSRAMWeightBytes);
+
+    printf("SRAM weight reduction:          %.2fx\n", (double)depthwiseBaselineSRAMWeightBytes / depthwiseDiagSRAMWeightBytes);
     printf("\nDepthwise computation:\n");
     printf("Ideal depthwise MACs:           %d\n", depthwiseIdealMACs);
 
