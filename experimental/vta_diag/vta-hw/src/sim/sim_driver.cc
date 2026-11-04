@@ -37,6 +37,7 @@
 #include <sstream>
 
 #include "../vmem/virtual_memory.h"
+#include "tvm/runtime/logging.h"
 #include "vta/hw_spec_const.h"
 
 /* (experimental) */
@@ -372,6 +373,7 @@ class Device {
       case VTA_OPCODE_STORE: device->RunStore(mem); break;
       case VTA_OPCODE_GEMM_DIAG:
       case VTA_OPCODE_GEMM: device->RunGEMM(gem); break;
+      case VTA_OPCODE_ACC_TO_INP: device->RunAccToInp(mem); break;
       case VTA_OPCODE_ALU: device->RunALU(alu); break;
       case VTA_OPCODE_FINISH: ++(device->finish_counter_); break;
       default: {
@@ -425,6 +427,25 @@ class Device {
       LOG(FATAL) << "Store do not support memory_type="
                  << op->memory_type;
     }
+  }
+
+  void RunAccToInp(const VTAMemInsn *op)
+  {
+      if (prof_->SkipExec()) return;
+
+      CHECK_EQ(VTA_BLOCK_OUT, VTA_BLOCK_IN);
+
+      for (uint32_t t = 0; t < op->x_size; ++t)
+      {
+          uint32_t acc_idx = op->sram_base + t;
+          uint32_t inp_idx = op->dram_base + t;
+
+          BitPacker<VTA_ACC_WIDTH> src(acc_.BeginPtr(acc_idx));
+          BitPacker<VTA_INP_WIDTH> dst(inp_.BeginPtr(inp_idx));
+
+          for (uint32_t lane = 0; lane < VTA_BATCH * VTA_BLOCK_OUT; ++lane)
+              dst.SetSigned(lane, src.GetSigned(lane));
+      }
   }
 
   void RunGEMM(const VTAGemInsn* op) {

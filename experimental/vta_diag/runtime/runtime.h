@@ -221,6 +221,22 @@ TVM_DLL int VTAPushGEMMOp(void** uop_handle, int (*finit)(void*), void* signatur
  */
 TVM_DLL int VTAPushGEMMDiagOp(void **uop_handle, int (*finit)(void*), void *signature, int nbytes);
 
+/*! (experimental)
+* \brief Transfer accumulator tiles directly to input SRAM.
+* \param cmd VTA command handle.
+* \param src_acc_index First source ACC SRAM tile.
+* \param dst_inp_index First destination INP SRAM tile.
+* \param tile_count Number of tiles to transfer.
+* \return 0 if success.
+*/
+TVM_DLL int VTAPushAccToInp(
+    VTACommandHandle cmd,
+    uint32_t src_acc_index,
+    uint32_t dst_inp_index,
+    uint32_t tile_count
+);
+
+
 /*!
  * \brief Push ALU uop kernel into the command handle.
  * \param uop_handle The uop cache handle.

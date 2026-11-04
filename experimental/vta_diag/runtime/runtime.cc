@@ -25,7 +25,10 @@
  *  stream spec as specified in hw_spec.h
  */
 #include "runtime.h"
+#include "vta/hw_spec_const.h"
+#include "vta/runtime/runtime.h"
 
+#include <cstdint>
 #include <dmlc/logging.h>
 #include <stdlib.h>
 #include <tvm/runtime/c_runtime_api.h>
@@ -655,6 +658,13 @@ class InsnQueue : public BaseQueue<VTAGenericInsn> {
   }
   // create a new instruction for a store stage
   VTAMemInsn* CreateStoreInsn() { return reinterpret_cast<VTAMemInsn*>(Create(kStoreStage)); }
+
+  // (experimental)
+  VTAMemInsn* CreateAccToInpInsn()
+  {
+      return reinterpret_cast<VTAMemInsn*>(Create(kComputeStage));
+  }
+
   // Rewrite instruction stream to force serial execution
   void RewriteForceSerial() {
     int insn_count = count();
@@ -945,7 +955,9 @@ class InsnQueue : public BaseQueue<VTAGenericInsn> {
   }
   // Get stage of the computation
   static PipelineStage GetPipelineStage(VTAMemInsn* insn) {
-    if (insn->opcode == VTA_OPCODE_GEMM || insn->opcode == VTA_OPCODE_GEMM_DIAG) return kComputeStage;
+    if (insn->opcode == VTA_OPCODE_GEMM ||
+        insn->opcode == VTA_OPCODE_GEMM_DIAG||
+        insn->opcode == VTA_OPCODE_ACC_TO_INP) return kComputeStage;
     if (insn->opcode == VTA_OPCODE_ALU) return kComputeStage;
     if (insn->opcode == VTA_OPCODE_LOAD) {
       if (insn->x_size == 0) return kNoneStage;
@@ -1205,6 +1217,38 @@ class CommandQueue {
       this->CheckInsnOverFlow();
   }
 
+  /* (experimental)
+   * Emit an internal ACC -> INP transfer.
+   *
+   * Encoding:
+   *    sram_base = source ACC SRAM index
+   *    dram_base = destination INP SRAM index
+   *    x_size    = number of tiles
+   */
+  void PushAccToInp(
+      uint32_t src_acc_idx,
+      uint32_t dst_inp_idx,
+      uint32_t tile_count
+  )
+  {
+      VTAMemInsn *insn;
+      insn = insn_queue_.CreateAccToInpInsn();
+
+      insn->opcode = VTA_OPCODE_ACC_TO_INP;
+      insn->memory_type = VTA_MEM_ID_ACC;
+      insn->sram_base = src_acc_idx;
+
+      /*
+       * Experimental reuse:
+       * dram base doesnt contain a DRAM address here
+       * it contains the dest INP SRAM idx
+       */
+      insn->dram_base = dst_inp_idx;
+      insn->x_size = tile_count;
+      insn->y_size = 1;
+      insn->x_stride = tile_count;
+  }
+
   void PushALUUop(void** uop_handle, int (*finit)(void*), void* signature, int nbytes) {
     UopKernelMap** uptr = reinterpret_cast<UopKernelMap**>(uop_handle);
     if (uptr[0] == nullptr) {
@@ -1435,6 +1479,19 @@ int VTAPushGEMMOp(void** uop_handle, int (*finit)(void*), void* signature, int n
 int VTAPushGEMMDiagOp(void **uop_handle, int (*finit)(void*), void *signature, int nbytes)
 {
     vta::CommandQueue::ThreadLocal()->PushGEMMDiagOp(uop_handle, finit, signature, nbytes);
+    return 0;
+}
+
+/* (experimental) */
+int VTAPushAccToInp(
+    VTACommandHandle cmd,
+    uint32_t src_acc_idx,
+    uint32_t dst_inp_idx,
+    uint32_t tile_count
+)
+{
+    static_cast<vta::CommandQueue*>(cmd)->PushAccToInp(src_acc_idx, dst_inp_idx, tile_count);
+
     return 0;
 }
 
