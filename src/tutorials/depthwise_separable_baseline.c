@@ -89,7 +89,7 @@ int countValidTaps(int outPixel)
             inY = oy * STRIDE_H + ky - PAD_TOP;
             inX = ox * STRIDE_W + kx - PAD_LEFT;
 
-            if (inY >= 0 && inY < INPUT_H && inX >= 0 && inY < INPUT_W)
+            if (inY >= 0 && inY < INPUT_H && inX >= 0 && inX < INPUT_W)
                 validTaps++;
         }
 
