@@ -136,6 +136,9 @@
 /*! (experiment) Opcode: diagonal GEMM encoding */
 #define VTA_OPCODE_GEMM_DIAG 5
 
+/*! (experiment) Opcode: interal ACC to INP transfer */
+#define VTA_OPCODE_ACC_TO_INP 6
+
 /*! ALU opcode: unary min op */
 #define VTA_ALU_OPCODE_MIN 0
 /*! ALU opcode: unary max op */
