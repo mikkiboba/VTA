@@ -945,7 +945,7 @@ class InsnQueue : public BaseQueue<VTAGenericInsn> {
   }
   // Get stage of the computation
   static PipelineStage GetPipelineStage(VTAMemInsn* insn) {
-    if (insn->opcode == VTA_OPCODE_GEMM) return kComputeStage;
+    if (insn->opcode == VTA_OPCODE_GEMM || insn->opcode == VTA_OPCODE_GEMM_DIAG) return kComputeStage;
     if (insn->opcode == VTA_OPCODE_ALU) return kComputeStage;
     if (insn->opcode == VTA_OPCODE_LOAD) {
       if (insn->x_size == 0) return kNoneStage;
@@ -1026,6 +1026,12 @@ class CommandQueue {
       case VTA_MEM_ID_WGT:
         elem_bytes = VTA_WGT_ELEM_BYTES;
         break;
+
+      /* (experiental) */
+      case VTA_MEM_ID_WGT_DIAG:
+          elem_bytes = VTA_WGT_DIAG_ELEM_BYTES;
+          break;
+
       case VTA_MEM_ID_ACC:
         elem_bytes = VTA_ACC_ELEM_BYTES;
         break;
@@ -1167,8 +1173,36 @@ class CommandQueue {
       }
       record_kernel_ = nullptr;
     }
-    this->PushGEMMOp(static_cast<UopKernel*>(kptr[0]));
+    this->PushGEMMOp(static_cast<UopKernel*>(kptr[0]), false);
     this->CheckInsnOverFlow();
+  }
+
+  /* (experimental) */
+  void PushGEMMDiagOp(void **uop_handle, int (*finit)(void*), void *signature, int nbytes)
+  {
+      UopKernelMap **uptr = reinterpret_cast<UopKernelMap**>(uop_handle);
+
+      if (uptr[0] == nullptr)
+          uptr[0] = new UopKernelMap();
+
+      UopKernel **kptr = uptr[0]->Get(signature, nbytes);
+
+      if (kptr[0] == nullptr)
+      {
+          record_kernel_ = new UopKernel(static_cast<char*>(signature), nbytes);
+
+          CHECK_EQ((*finit)(signature), 0);
+
+          kptr[0] = static_cast<UopKernel*>(record_kernel_);
+
+          if (debug_flag_ & VTA_DEBUG_DUMP_UOP)
+              record_kernel_->Dump();
+
+          record_kernel_ = nullptr;
+      }
+
+      this->PushGEMMOp(static_cast<UopKernel*>(kptr[0]), true);
+      this->CheckInsnOverFlow();
   }
 
   void PushALUUop(void** uop_handle, int (*finit)(void*), void* signature, int nbytes) {
@@ -1202,7 +1236,7 @@ class CommandQueue {
 
  private:
   // Push GEMM uop to the command buffer
-  void PushGEMMOp(UopKernel* kernel) {
+  void PushGEMMOp(UopKernel* kernel, bool diag_mode) {
     uop_queue_.Push(kernel, [this]() { this->AutoSync(); });
     if (uop_queue_.pending()) {
       VTAMemInsn* insn = insn_queue_.CreateMemInsn(VTA_MEM_ID_UOP);
@@ -1210,7 +1244,7 @@ class CommandQueue {
       uop_queue_.FlushUopLoad(insn);
     }
     VTAGemInsn* insn = insn_queue_.CreateGemInsn();
-    insn->opcode = VTA_OPCODE_GEMM;
+    insn->opcode = diag_mode ? VTA_OPCODE_GEMM_DIAG : VTA_OPCODE_GEMM;
     insn->reset_reg = kernel->reset_out_;
     insn->uop_bgn = kernel->sram_begin_;
     insn->uop_end = kernel->sram_end_;
@@ -1395,6 +1429,13 @@ void VTAUopLoopEnd() { vta::CommandQueue::ThreadLocal()->record_kernel()->PushLo
 int VTAPushGEMMOp(void** uop_handle, int (*finit)(void*), void* signature, int nbytes) {
   vta::CommandQueue::ThreadLocal()->PushGEMMOp(uop_handle, finit, signature, nbytes);
   return 0;
+}
+
+/* (experimental) */
+int VTAPushGEMMDiagOp(void **uop_handle, int (*finit)(void*), void *signature, int nbytes)
+{
+    vta::CommandQueue::ThreadLocal()->PushGEMMDiagOp(uop_handle, finit, signature, nbytes);
+    return 0;
 }
 
 int VTAPushALUOp(void** uop_handle, int (*finit)(void*), void* signature, int nbytes) {

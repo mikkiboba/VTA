@@ -82,6 +82,10 @@
 #define VTA_INP_ELEM_BYTES (VTA_INP_MATRIX_WIDTH / 8)
 /*! Size of weight buffer element in B*/
 #define VTA_WGT_ELEM_BYTES (VTA_WGT_MATRIX_WIDTH / 8)
+
+/*! (experimental) Size of compact diagonal weight element in B */
+#define VTA_WGT_DIAG_ELEM_BYTES (VTA_WGT_WIDTH * VTA_BLOCK_OUT / 8)
+
 /*! Size of accumulator buffer element in B*/
 #define VTA_ACC_ELEM_BYTES (VTA_ACC_MATRIX_WIDTH / 8)
 /*! Size of output buffer element in B*/
@@ -122,6 +126,9 @@
 #define VTA_OPCODE_FINISH 3
 /*! Opcode: ALU encoding */
 #define VTA_OPCODE_ALU 4
+
+/*! (experiment) Opcode: diagonal GEMM encoding */
+#define VTA_OPCODE_GEMM_DIAG 5
 
 /*! ALU opcode: unary min op */
 #define VTA_ALU_OPCODE_MIN 0
@@ -169,5 +176,8 @@
 #define VTA_MEM_ID_OUT 4
 /*! Mem ID constant: accumulator/bias memory (from int_8 buffer) */
 #define VTA_MEM_ID_ACC_8BIT 5
+
+/*! (experimental) Mem ID constant: compact diagonal weight memory */
+#define VTA_MEM_ID_WGT_DIAG 6
 
 #endif  // VTA_HW_SPEC_CONST_H_

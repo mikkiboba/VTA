@@ -216,6 +216,11 @@ TVM_DLL void VTAUopLoopEnd();
  */
 TVM_DLL int VTAPushGEMMOp(void** uop_handle, int (*finit)(void*), void* signature, int nbytes);
 
+/*! (experimental)
+ * \brief Push diagonal GEMM uop kernel into the command handle
+ */
+TVM_DLL int VTAPushGEMMDiagOp(void **uop_handle, int (*finit)(void*), void *signature, int nbytes);
+
 /*!
  * \brief Push ALU uop kernel into the command handle.
  * \param uop_handle The uop cache handle.
