@@ -23,6 +23,7 @@
  */
 #include <cassert>
 #include <cstdint>
+#include <stdint.h>
 #include <sys/types.h>
 #include <vta/driver.h>
 #include <vta/hw_spec.h>
@@ -281,6 +282,13 @@ class Profiler {
   uint64_t out_store_nbytes{0};
   /*! \brief instr counter for gemm */
   uint64_t gemm_counter{0};
+
+  /*! (experimental) Scalar MACs executed by standard dense GEMM */
+  uint64_t dense_mac_counter{0};
+
+  /*! (experimental) Scalar MACs executed by diagonal GEMM */
+  uint64_t diag_mac_counter{0};
+
   /*! \brief instr counter for ALU ops */
   uint64_t alu_counter{0};
   /*! \brief set debug mode */
@@ -294,6 +302,10 @@ class Profiler {
     out_store_nbytes = 0;
     gemm_counter = 0;
     alu_counter = 0;
+
+    /* (experimental) */
+    dense_mac_counter = 0;
+    diag_mac_counter = 0;
   }
   /*! \return Whether we should skip execution. */
   bool SkipExec() const {
@@ -309,6 +321,11 @@ class Profiler {
        << " \"uop_load_nbytes\":" << uop_load_nbytes << ",\n"
        << " \"out_store_nbytes\":" << out_store_nbytes << ",\n"
        << " \"gemm_counter\":" << gemm_counter << ",\n"
+
+       /* (experimental) */
+       << " \"dense_mac_counter\":" << dense_mac_counter << ",\n"
+       << " \"diag_mac_counter\":" << diag_mac_counter << ",\n"
+
        << " \"alu_counter\":" << alu_counter << "\n"
        <<"}\n";
     return os.str();
@@ -464,6 +481,8 @@ class Device {
 
                         sum += inp.GetSigned(i * VTA_BLOCK_IN + j) * wgt_diag.GetSigned(j);
 
+                        prof_->diag_mac_counter++;
+
                         acc.SetSigned(acc_offset, sum);
                     }
                 }
@@ -478,6 +497,8 @@ class Device {
                       sum +=
                           inp.GetSigned(i * VTA_BLOCK_IN + k) *
                           wgt.GetSigned(j * VTA_BLOCK_IN + k);
+
+                      prof_->dense_mac_counter++;
                     }
                     acc.SetSigned(acc_offset, sum);
                   }
@@ -655,4 +676,12 @@ int VTADeviceRun(VTADeviceHandle handle,
 }
 
 void VTAProgram(const char* bitstream) {
+}
+
+uint64_t VTAGetDenseMACCounter(void) {
+  return vta::sim::Profiler::ThreadLocal()->dense_mac_counter;
+}
+
+uint64_t VTAGetDiagMACCounter(void) {
+  return vta::sim::Profiler::ThreadLocal()->diag_mac_counter;
 }

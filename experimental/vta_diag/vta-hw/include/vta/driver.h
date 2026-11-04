@@ -141,6 +141,17 @@ void VTAFlushCache(void* vir_addr, vta_phy_addr_t phy_addr, int size);
  */
 void VTAInvalidateCache(void* vir_addr, vta_phy_addr_t phy_addr, int size);
 
+
+/*! (experimental)
+ * \brief Return number of scalar MACs executed by dense GEMM.
+ */
+uint64_t VTAGetDenseMACCounter(void);
+
+/*! (experimental)
+ * \brief Return number of scalar MACs executed by diagonal GEMM.
+ */
+uint64_t VTAGetDiagMACCounter(void);
+
 #ifdef __cplusplus
 }
 #endif
