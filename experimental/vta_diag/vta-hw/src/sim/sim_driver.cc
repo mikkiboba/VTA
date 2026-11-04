@@ -381,33 +381,7 @@ class Device {
 
       /* (experimental) */
     } else if (op->memory_type == VTA_MEM_ID_WGT_DIAG) {
-        prof_->wgt_load_nbytes += op->x_size * op->y_size * VTA_WGT_DIAG_ELEM_BYTES;
-
-        if (!prof_->SkipExec()) {
-            for (uint32_t y = 0; y < op->y_size; ++y) {
-                for (uint32_t x = 0; x < op->x_size; ++x) {
-                    uint32_t dram_idx, sram_idx;
-                    dram_idx = op->dram_base + y * op->x_stride + x;
-                    sram_idx = op->sram_base + y * op->x_size + x;
-
-                    BitPacker<VTA_WGT_WIDTH> src(
-                        dram_->GetAddr(dram_idx * VTA_WGT_DIAG_ELEM_BYTES)
-                    );
-
-                    BitPacker<VTA_WGT_WIDTH> dst(
-                        wgt_.BeginPtr(sram_idx)
-                    );
-
-                    for (uint32_t i = 0; i < VTA_BLOCK_OUT * VTA_BLOCK_IN; ++i) {
-                        dst.SetSigned(i, 0);
-                    }
-
-                    for (uint32_t c = 0; c < VTA_BLOCK_OUT && c < VTA_BLOCK_IN; ++c) {
-                        dst.SetSigned(c * VTA_BLOCK_IN + c, src.GetSigned(c));
-                    }
-                }
-            }
-        }
+        wgt_diag_.Load(op, dram_, &(prof_->wgt_load_nbytes), prof_->SkipExec());
 
     } else if (op->memory_type == VTA_MEM_ID_ACC) {
       acc_.Load(op, dram_, &(prof_->acc_load_nbytes), prof_->SkipExec());
@@ -476,17 +450,19 @@ class Device {
             // gemm loop
             if (op->opcode == VTA_OPCODE_GEMM_DIAG)
             {
+                BitPacker<VTA_WGT_WIDTH> wgt_diag(wgt_diag_.BeginPtr(wgt_idx));
+
                 for (uint32_t i = 0; i < VTA_BATCH; ++i)
                 {
                     for (uint32_t j = 0; j < VTA_BLOCK_OUT; ++j)
                     {
                         uint32_t acc_offset;
-                        acc_offset = i * VTA_BLOCK_IN + j;
+                        acc_offset = i * VTA_BLOCK_OUT + j;
 
                         int32_t sum;
                         sum = acc.GetSigned(acc_offset);
 
-                        sum += inp.GetSigned(i * VTA_BLOCK_IN + j) * wgt.GetSigned(j * VTA_BLOCK_IN + j);
+                        sum += inp.GetSigned(i * VTA_BLOCK_IN + j) * wgt.GetSigned(j);
 
                         acc.SetSigned(acc_offset, sum);
                     }
@@ -613,6 +589,9 @@ class Device {
   SRAM<VTA_WGT_WIDTH, VTA_BLOCK_IN * VTA_BLOCK_OUT, VTA_WGT_BUFF_DEPTH> wgt_;
   SRAM<VTA_ACC_WIDTH, VTA_BATCH * VTA_BLOCK_OUT, VTA_ACC_BUFF_DEPTH> acc_;
   SRAM<VTA_UOP_WIDTH, 1, VTA_UOP_BUFF_DEPTH> uop_;
+
+  /* (experimental) compact diagonal weight SRAM */
+  SRAM<VTA_WGT_WIDTH, VTA_BLOCK_OUT, VTA_WGT_DIAG_BUFF_DEPTH> wgt_diag_;
 };
 
 using tvm::runtime::TVMRetValue;

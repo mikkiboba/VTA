@@ -86,6 +86,12 @@
 /*! (experimental) Size of compact diagonal weight element in B */
 #define VTA_WGT_DIAG_ELEM_BYTES (VTA_WGT_WIDTH * VTA_BLOCK_OUT / 8)
 
+/*! (experimental) Number of entries in compact diagonal weight SRAM */
+#define VTA_WGT_DIAG_BUFF_DEPTH (VTA_WGT_BUFF_DEPTH)
+
+/*! (experimental) Total size in bytes of compact diagonal weight SRAM */
+#define VTA_WGT_DIAG_BUFF_SIZE (VTA_WGT_DIAG_BUFF_DEPTH * VTA_WGT_DIAG_ELEM_BYTES)
+
 /*! Size of accumulator buffer element in B*/
 #define VTA_ACC_ELEM_BYTES (VTA_ACC_MATRIX_WIDTH / 8)
 /*! Size of output buffer element in B*/
