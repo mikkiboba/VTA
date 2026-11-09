@@ -163,6 +163,50 @@ class SRAM {
     CHECK_LT(index, kMaxNumElem);
     return &(data_[index]);
   }
+
+  /* (experimental)
+   *
+   * Return a byte-addressable pointer the same SRAM storage.
+   *
+   * For compact representation whose logical element size is smaller than the normal SRAM element size.
+   */
+  void* BeginBytePtr(uint32_t byteOffset)
+  {
+      CHECK_LT(byteOffset, kMaxNumElem * kElemBytes);
+
+      return reinterpret_cast<uint8_t>(data_) + byteOffset;
+  }
+
+  /* (experimental)
+   *
+   *
+   */
+  void LoadCompact(
+      const VTAMemInsn  *op,
+      DRAM              *dram,
+      uint64_t          *load_counter,
+      bool              skip_exec,
+      uint32_t          compact_elem_bytes
+  )
+  {
+    load_counter[0] += (op->x_size * op->y_size) * compact_elem_bytes;
+
+    if (skip_exec)
+        return;
+
+    uint8_t *sram_ptr = reinterpret_cast<uint8_t*>(data_) + op->sram_base * compact_elem_bytes;
+    uint8_t *dram_ptr = reinterpret_cast<uint8_t*>(dram->GetAddr(op->dram_base * compact_elem_bytes));
+
+    for (uint32_t y = 0; y < op->x_size; ++y)
+    {
+        memcpy(sram_ptr, dram_ptr, op->x_size * compact_elem_bytes);
+
+        sram_ptr += op->x_size * compact_elem_bytes;
+        dram_ptr += op->x_stride * compact_elem_bytes;
+    }
+
+  }
+
   // Execute the load instruction on this SRAM
   void Load(const VTAMemInsn* op,
             DRAM* dram,
@@ -400,7 +444,7 @@ class Device {
 
       /* (experimental) */
     } else if (op->memory_type == VTA_MEM_ID_WGT_DIAG) {
-        wgt_diag_.Load(op, dram_, &(prof_->wgt_load_nbytes), prof_->SkipExec());
+        wgt_diag_.LoadCompact(op, dram_, &(prof_->wgt_load_nbytes), prof_->SkipExec(), VTA_WGT_DIAG_ELEM_BYTES);
 
     } else if (op->memory_type == VTA_MEM_ID_ACC) {
       acc_.Load(op, dram_, &(prof_->acc_load_nbytes), prof_->SkipExec());
@@ -488,7 +532,7 @@ class Device {
             // gemm loop
             if (op->opcode == VTA_OPCODE_GEMM_DIAG)
             {
-                BitPacker<VTA_WGT_WIDTH> wgt_diag(wgt_diag_.BeginPtr(wgt_idx));
+                BitPacker<VTA_WGT_WIDTH> wgt_diag(wgt_.BeginBytePtr(wgt_idx * VTA_WGT_DIAG_ELEM_BYTES));
 
                 for (uint32_t i = 0; i < VTA_BATCH; ++i)
                 {
