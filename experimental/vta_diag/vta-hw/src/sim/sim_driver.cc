@@ -174,7 +174,7 @@ class SRAM {
   {
       CHECK_LT(byteOffset, kMaxNumElem * kElemBytes);
 
-      return reinterpret_cast<uint8_t>(data_) + byteOffset;
+      return reinterpret_cast<uint8_t*>(data_) + byteOffset;
   }
 
   /* (experimental)
