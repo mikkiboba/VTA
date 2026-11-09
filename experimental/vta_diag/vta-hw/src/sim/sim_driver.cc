@@ -197,7 +197,7 @@ class SRAM {
     uint8_t *sram_ptr = reinterpret_cast<uint8_t*>(data_) + op->sram_base * compact_elem_bytes;
     uint8_t *dram_ptr = reinterpret_cast<uint8_t*>(dram->GetAddr(op->dram_base * compact_elem_bytes));
 
-    for (uint32_t y = 0; y < op->x_size; ++y)
+    for (uint32_t y = 0; y < op->y_size; ++y)
     {
         memcpy(sram_ptr, dram_ptr, op->x_size * compact_elem_bytes);
 
@@ -444,7 +444,7 @@ class Device {
 
       /* (experimental) */
     } else if (op->memory_type == VTA_MEM_ID_WGT_DIAG) {
-        wgt_diag_.LoadCompact(op, dram_, &(prof_->wgt_load_nbytes), prof_->SkipExec(), VTA_WGT_DIAG_ELEM_BYTES);
+        wgt_.LoadCompact(op, dram_, &(prof_->wgt_load_nbytes), prof_->SkipExec(), VTA_WGT_DIAG_ELEM_BYTES);
 
     } else if (op->memory_type == VTA_MEM_ID_ACC) {
       acc_.Load(op, dram_, &(prof_->acc_load_nbytes), prof_->SkipExec());
