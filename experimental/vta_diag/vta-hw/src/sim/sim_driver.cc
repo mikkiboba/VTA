@@ -706,7 +706,7 @@ class Device {
                   /*
                    * copy backwards so it works when src_idx == dst_idx
                    */
-                  for (int lane = VTA_BATCH * VTA_BLOCK_OUT; lane > 0; --lane)
+                  for (int lane = VTA_BATCH * VTA_BLOCK_OUT - 1; lane > 0; --lane)
                   {
                       dst.SetSigned(lane, src.GetSigned(lane - 1));
                   }

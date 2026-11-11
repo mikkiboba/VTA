@@ -51,7 +51,7 @@ int main(void)
     VTADepPush(handle, LOAD, COMPUTE);
     VTADepPop(handle, LOAD, COMPUTE);
 
-    VTAPushALUOp(PACK_cache_handle, packInit, NULL, 0);
+    VTAPushALUOp(&PACK_cache_handle, packInit, NULL, 0);
 
     VTADepPush(handle, COMPUTE, STORE);
     VTADepPop(handle, COMPUTE, STORE);
