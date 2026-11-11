@@ -634,7 +634,7 @@ class Device {
                   uint32_t wgt_idx = uop_ptr->wgt_idx;
 
                   dst_idx += y * op->dst_factor_out + x * op->dst_factor_in;
-                  src_idx += y * op->dst_factor_out + x * op->dst_factor_in;
+                  src_idx += y * op->src_factor_out + x * op->src_factor_in;
 
                   BitPacker<VTA_ACC_WIDTH> src(acc_.BeginPtr(src_idx));
                   BitPacker<VTA_ACC_WIDTH> dst(acc_.BeginPtr(dst_idx));
