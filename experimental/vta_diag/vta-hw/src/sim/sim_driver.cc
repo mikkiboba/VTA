@@ -37,6 +37,7 @@
 #include <sstream>
 
 #include "../vmem/virtual_memory.h"
+#include "dmlc/logging.h"
 #include "tvm/runtime/logging.h"
 #include "vta/hw_spec_const.h"
 
@@ -599,6 +600,70 @@ class Device {
     }
   }
 
+  /* (experimental)
+   *
+   * Dot product between one ACC vector and one WGT vector.
+   *
+   * src_idx -> ACC source vector
+   * wgt_idx -> pointwise weight row
+   * dst_idx -> ACC destination vector
+   *
+   * The scalar result is written to lane 0.
+   * All other destination lanes are cleared.
+   */
+  void RunALUDot(const VTAAluInsn *op)
+  {
+      prof_->alu_counter += op->iter_out * op->iter_in * (op->uop_end - op->uop_bgn);
+
+      if (prof_->SkipExec())
+          return;
+
+      CHECK_EQ(op->use_imm, 0);
+      CHECK_EQ(VTA_BLOCK_IN, VTA_BLOCK_OUT);
+
+      for (uint32_t y = 0; y < op->iter_out; ++y)
+      {
+          for (uint32_t x = 0; x < op->iter_in; ++x)
+          {
+              for (uint32_t k = op->uop_bgn; k < op->uop_end; ++k)
+              {
+                  VTAUop *uop_ptr = static_cast<VTAUop*>(uop_.BeginPtr(k));
+
+                  uint32_t dst_idx = uop_ptr->dst_idx;
+                  uint32_t src_idx = uop_ptr->src_idx;
+                  uint32_t wgt_idx = uop_ptr->wgt_idx;
+
+                  dst_idx += y * op->dst_factor_out + x * op->dst_factor_in;
+                  src_idx += y * op->dst_factor_out + x * op->dst_factor_in;
+
+                  BitPacker<VTA_ACC_WIDTH> src(acc_.BeginPtr(src_idx));
+                  BitPacker<VTA_ACC_WIDTH> dst(acc_.BeginPtr(dst_idx));
+
+                  /*
+                   * One pointwise row contains `VTA_BLOCK_IN` int8 weights.
+                   *
+                   * wgt_idx is interpreted here as a row index inside the existing WGT SRAM.
+                   */
+                  BitPacker<VTA_WGT_WIDTH> wgt_row(wgt_.BeginBytePtr(wgt_idx * (VTA_WGT_WIDTH * VTA_BLOCK_IN / 8)));
+
+                  int32_t sum = 0;
+
+                  for (uint32_t lane = 0; lane < VTA_BLOCK_IN; ++lane)
+                  {
+                      sum += src.GetSigned(lane) * wgt_row.GetSigned(lane);
+                  }
+
+                  for (uint32_t lane = 0; lane < VTA_BATCH * VTA_BLOCK_OUT; ++lane)
+                  {
+                      dst.SetSigned(lane, 0);
+                  }
+
+                  dst.SetSigned(0, sum);
+              }
+          }
+      }
+  }
+
   template<bool use_imm>
   void RunALU_(const VTAAluInsn* op) {
     switch (op->alu_opcode) {
@@ -631,6 +696,12 @@ class Device {
             return x * y;
           });
       }
+
+      /* (experimental) */
+      case VTA_ALU_OPCODE_DOT: {
+          return RunALUDot(op);
+      }
+
       default: {
         LOG(FATAL) << "Unknown ALU code " << op->alu_opcode;
       }
@@ -677,7 +748,8 @@ class Device {
   SRAM<VTA_UOP_WIDTH, 1, VTA_UOP_BUFF_DEPTH> uop_;
 
   /* (experimental) compact diagonal weight SRAM */
-  SRAM<VTA_WGT_WIDTH, VTA_BLOCK_OUT, VTA_WGT_DIAG_BUFF_DEPTH> wgt_diag_;
+  // deleted: we do not need it anymore
+  //SRAM<VTA_WGT_WIDTH, VTA_BLOCK_OUT, VTA_WGT_DIAG_BUFF_DEPTH> wgt_diag_;
 };
 
 using tvm::runtime::TVMRetValue;

@@ -87,10 +87,12 @@
 #define VTA_WGT_DIAG_ELEM_BYTES (VTA_WGT_WIDTH * VTA_BLOCK_OUT / 8)
 
 /*! (experimental) Number of entries in compact diagonal weight SRAM */
-#define VTA_WGT_DIAG_BUFF_DEPTH (VTA_WGT_BUFF_DEPTH)
+// deleted: we do not need this anymore
+//#define VTA_WGT_DIAG_BUFF_DEPTH (VTA_WGT_BUFF_DEPTH)
 
 /*! (experimental) Total size in bytes of compact diagonal weight SRAM */
-#define VTA_WGT_DIAG_BUFF_SIZE (VTA_WGT_DIAG_BUFF_DEPTH * VTA_WGT_DIAG_ELEM_BYTES)
+// deleted: we do not need this anymore
+//#define VTA_WGT_DIAG_BUFF_SIZE (VTA_WGT_DIAG_BUFF_DEPTH * VTA_WGT_DIAG_ELEM_BYTES)
 
 /*! Size of accumulator buffer element in B*/
 #define VTA_ACC_ELEM_BYTES (VTA_ACC_MATRIX_WIDTH / 8)
@@ -149,6 +151,12 @@
 #define VTA_ALU_OPCODE_SHR 3
 /*! ALU opcode: mul */
 #define VTA_ALU_OPCODE_MUL 4
+
+/* (experimental) */
+/*! ALU opcode:  */
+#define VTA_ALU_OPCODE_DOT 5
+/*! ALU opcode:  */
+#define VTA_ALU_OPCODE_SHI 6
 
 /*! Memory type field bitwidth */
 #define VTA_MEMOP_ID_BIT_WIDTH 3
