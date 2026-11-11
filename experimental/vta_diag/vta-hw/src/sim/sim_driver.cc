@@ -664,6 +664,59 @@ class Device {
       }
   }
 
+  /* (experimental)
+   *
+   * Shift ACC vec lanes by one position
+   *
+   * [a, b, c, d, ...] -> [0, a, b, c, d, ...]
+   *
+   * src_idx -> ACC source vec
+   * dst_idx -> ACC dest vec
+   *
+   * Different from SHR, this is a "lane" shift, not a bit shift
+   */
+  void RunALUPack(const VTAAluInsn *op)
+  {
+      prof_->alu_counter += op->iter_out * op->iter_in * (op->uop_end - op->uop_bgn);
+
+      if (prof_->SkipExec())
+          return;
+
+      CHECK_EQ(op->use_imm, 0);
+
+      for (uint32_t y = 0; y < op->iter_out; ++y)
+      {
+          for (uint32_t x = 0; x < op->iter_in; ++x)
+          {
+              for (uint32_t k = op->uop_bgn; k < op->uop_end; ++k)
+              {
+                  VTAUop *uopPtr;
+                  uopPtr = static_cast<VTAUop*>(uop_.BeginPtr(k));
+
+                  uint32_t dst_idx, src_idx;
+                  dst_idx = uopPtr->dst_idx;
+                  src_idx = uopPtr->src_idx;
+
+                  dst_idx += y * op->dst_factor_out + x * op->dst_factor_in;
+                  src_idx += y * op->src_factor_out + x * op->src_factor_in;
+
+                  BitPacker<VTA_ACC_WIDTH> src(acc_.BeginPtr(src_idx));
+                  BitPacker<VTA_ACC_WIDTH> dst(acc_.BeginPtr(dst_idx));
+
+                  /*
+                   * copy backwards so it works when src_idx == dst_idx
+                   */
+                  for (int lane = VTA_BATCH * VTA_BLOCK_OUT; lane > 0; --lane)
+                  {
+                      dst.SetSigned(lane, src.GetSigned(lane - 1));
+                  }
+                  dst.SetSigned(0, 0);
+              }
+          }
+      }
+  }
+
+
   template<bool use_imm>
   void RunALU_(const VTAAluInsn* op) {
     switch (op->alu_opcode) {
@@ -700,6 +753,11 @@ class Device {
       /* (experimental) */
       case VTA_ALU_OPCODE_DOT: {
           return RunALUDot(op);
+      }
+
+      /* (experimental) */
+      case VTA_ALU_OPCODE_SHI: {
+          return RunALUPack(op);
       }
 
       default: {
