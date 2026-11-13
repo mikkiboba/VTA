@@ -430,6 +430,9 @@ int main(void)
 
     validatePointwise(finalOutput);
 
+    printf("\nALU statistics:\n");
+    printf("ALU.DOT operations:             %llu\n", (unsigned long long)VTAGetALUDotCounter());
+
     VTABufferFree(inputBuffer);
     VTABufferFree(weightBuffer);
     VTABufferFree(pointwiseWeightBuffer);

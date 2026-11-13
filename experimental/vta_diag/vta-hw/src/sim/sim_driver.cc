@@ -335,6 +335,9 @@ class Profiler {
   /*! (experimental) Scalar MACs executed by diagonal GEMM */
   uint64_t diag_mac_counter{0};
 
+  /*! (experimental) Number of ALU.DOT operations executed */
+  uint64_t alu_dot_counter{0};
+
   /*! \brief instr counter for ALU ops */
   uint64_t alu_counter{0};
   /*! \brief set debug mode */
@@ -352,6 +355,7 @@ class Profiler {
     /* (experimental) */
     dense_mac_counter = 0;
     diag_mac_counter = 0;
+    alu_dot_counter = 0;
   }
   /*! \return Whether we should skip execution. */
   bool SkipExec() const {
@@ -371,6 +375,7 @@ class Profiler {
        /* (experimental) */
        << " \"dense_mac_counter\":" << dense_mac_counter << ",\n"
        << " \"diag_mac_counter\":" << diag_mac_counter << ",\n"
+       << " \"alu_dot_counter\":" << alu_dot_counter << ",\n"
 
        << " \"alu_counter\":" << alu_counter << "\n"
        <<"}\n";
@@ -613,7 +618,10 @@ class Device {
    */
   void RunALUDot(const VTAAluInsn *op)
   {
-      prof_->alu_counter += op->iter_out * op->iter_in * (op->uop_end - op->uop_bgn);
+      uint64_t dotOps = op->iter_out * op->iter_in * (op->uop_end - op->uop_bgn);
+
+      prof_->alu_counter += dotOps;
+      prof_->alu_dot_counter += dotOps;
 
       if (prof_->SkipExec())
           return;
@@ -879,4 +887,8 @@ uint64_t VTAGetDenseMACCounter(void) {
 
 uint64_t VTAGetDiagMACCounter(void) {
   return vta::sim::Profiler::ThreadLocal()->diag_mac_counter;
+}
+
+uint64_t VTAGetALUDotCounter(void) {
+  return vta::sim::Profiler::ThreadLocal()->alu_dot_counter;
 }

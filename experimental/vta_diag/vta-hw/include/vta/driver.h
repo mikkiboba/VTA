@@ -27,6 +27,7 @@
 #ifndef VTA_DRIVER_H_
 #define VTA_DRIVER_H_
 
+#include <cstdint>
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -151,6 +152,12 @@ uint64_t VTAGetDenseMACCounter(void);
  * \brief Return number of scalar MACs executed by diagonal GEMM.
  */
 uint64_t VTAGetDiagMACCounter(void);
+
+/*! (experimental)
+ *
+ * \brief Return number of ALU.DOT operations executed.
+ */
+uint64_t VTAGetAluDotCounter(void);
 
 #ifdef __cplusplus
 }
