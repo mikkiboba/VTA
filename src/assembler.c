@@ -25,8 +25,8 @@
 /*!
  * \brief Number of factors for GEMM operations.
  *
- * \note `dst_factor_out`, `dst_factor_in`, 
- * \note `src_factor_out`, `src_factor_in`, 
+ * \note `dst_factor_out`, `dst_factor_in`,
+ * \note `src_factor_out`, `src_factor_in`,
  * \note `wgt_factor_out`, `wgt_factor_in`
 */
 #define N_GEMM_FACTORS 6
@@ -47,14 +47,14 @@
 /*!
  * \brief Kind of token recognised by the assembler.
 */
-typedef enum 
+typedef enum
 {
     /*!
      * \brief Mnemonics, registers, labels.
      *
      * (e.g. "LOAD", "ACC", "lbl1_bgn")
     */
-    TOKEN_IDENTIFIER, 
+    TOKEN_IDENTIFIER,
 
     /*!
      * \brief Integer values.
@@ -63,7 +63,7 @@ typedef enum
 
     /*!
      * \brief Punctuation characters.
-     * 
+     *
      * (e.g. `(`, `[`, `:`, `,`)
     */
     TOKEN_PUNCTUATION,
@@ -88,7 +88,7 @@ typedef enum
 /*!
  * \brief VTA ASM supported operation.
 */
-typedef enum 
+typedef enum
 {
     ASM_LOAD,
     ASM_STORE,
@@ -102,7 +102,13 @@ typedef enum
      * \brief GEMM operation with reset <- 1.
     */
     ASM_GEMM_RST,
-    
+
+    /*!
+     * \brief GEMM operation for diagonal representation.
+     * \note reset <- 0
+     */
+    ASM_GEMM_DIAG,
+
     ASM_ALU,
     ASM_FINISH,
     ASM_NOOP
@@ -112,7 +118,7 @@ typedef enum
 /*!
  * \brief Dependencies for the VTA instructions.
 */
-typedef struct 
+typedef struct
 {
     int pop_prev;
     int pop_next;
@@ -125,7 +131,7 @@ typedef struct
  * \brief Label to indicate the transition between two states.
  * \note The format is: "source_destination".
 */
-typedef struct 
+typedef struct
 {
     /*!
      * \brief From EXECUTE to LOAD.
@@ -152,7 +158,7 @@ typedef struct
 /*!
  * \brief Complex structure for a parsed instruction.
 */
-typedef struct 
+typedef struct
 {
     /*!
      * \brief Type of instruction (in VTA ASM).
@@ -177,7 +183,7 @@ typedef struct
     /*!
      * \brief Actual binary data of the instruction.
     */
-    union 
+    union
     {
         /*!
          * \brief For LOAD / STORE instructions.
@@ -200,19 +206,19 @@ typedef struct
 /*!
  * \brief Token representing a single fragment of analised text.
  *
- * Store information on the type of token, what text it exactly contains, 
+ * Store information on the type of token, what text it exactly contains,
  * and the value.
- * 
- * \note 
+ *
+ * \note
  * - The text information must be of max length `TEXT_SIZE` (including `\n`).
- * 
+ *
  * - If the value is `TOKEN_INT`, it already contains the converted value.
 */
-typedef struct 
+typedef struct
 {
     /*!
      * \brief Type of the analised text.
-     * 
+     *
      * Defined by the enum `VTATokenType`.
     */
     VTATokenType type;
@@ -226,7 +232,7 @@ typedef struct
 
     /*!
      * \brief Value related to the analised text.
-     * 
+     *
      * If `type == TOKEN_INT`, it contains the already converted value.
     */
     int64_t value;
@@ -236,12 +242,12 @@ typedef struct
 /*!
  * \brief Current state of the parser.
  *
- * Stores informations on the state of the parser's cursor and the line 
+ * Stores informations on the state of the parser's cursor and the line
  * number it is working on.
 */
-typedef struct 
+typedef struct
 {
-    /*! 
+    /*!
      * \brief Pointer to the current character in input
     */
     const char *cursor;
@@ -256,10 +262,10 @@ typedef struct
 /*!
  * \brief Single label in the Label Table (LT).
  *
- * Store information on a single label to insert in the LT, such as its name, 
+ * Store information on a single label to insert in the LT, such as its name,
  * the micro-operation's index, and the line number on the input.
 */
-typedef struct 
+typedef struct
 {
     char name[TEXT_SIZE];
     uint32_t uopIdx;
@@ -272,7 +278,7 @@ typedef struct
  *
  * Store information on every label found in the input text. See struct `VTALabel`.
 */
-typedef struct 
+typedef struct
 {
     VTALabel labels[MAX_LABELS];
     int count;
@@ -302,15 +308,15 @@ static VTAErr parseInstruction(VTAParserContext *ctx, const VTAToken *token, VTA
  * \param ctx           Context parser.
  * \param expectedType  What kind of token is expected.
  * \param expectedText  What exact text is expected.
- * 
+ *
  * \return Status (VTAErr).
 */
-static VTAErr expectToken(VTAParserContext *ctx, VTATokenType expectedType, const char *expectedText) 
+static VTAErr expectToken(VTAParserContext *ctx, VTATokenType expectedType, const char *expectedText)
 {
     VTAToken token;
     token = getNextToken(ctx);
 
-    if (token.type != expectedType) 
+    if (token.type != expectedType)
         return VTA_ERR_SYNTAX;
 
     if (expectedText != NULL && strcmp(token.text, expectedText) != 0)
@@ -324,10 +330,10 @@ static VTAErr expectToken(VTAParserContext *ctx, VTATokenType expectedType, cons
  * \brief Initialize the label table (LT).
  *
  * Set table count to zero.
- * 
+ *
  * \param table Table to use.
 */
-static void LT_init(VTALT *table) 
+static void LT_init(VTALT *table)
 {
     table->count = 0;
 }
@@ -335,29 +341,29 @@ static void LT_init(VTALT *table)
 
 /*!
  * \brief Add a new label to the label table (LT).
- * 
+ *
  * \param table     Label table.
  * \param name      Name of the label.
  * \param uopIdx    Index of the micro-instruction.
  * \param lineNum   Line number in the input file.
- * 
+ *
  * \return Status of type (VTAErr).
 */
 static VTAErr LT_add(
-    VTALT       *table, 
-    const char  *name, 
-    uint32_t    uopIdx, 
+    VTALT       *table,
+    const char  *name,
+    uint32_t    uopIdx,
     int         lineNum
-) 
+)
 {
     // * check for duplicates
-    for (int i = 0; i < table->count; i++) 
+    for (int i = 0; i < table->count; i++)
     {
         if (strcmp(table->labels[i].name, name) == 0)
             return VTA_ERR_SYNTAX; // * idk if it's the right error
     }
 
-    if (table->count >= MAX_LABELS) 
+    if (table->count >= MAX_LABELS)
         return VTA_ERR_NO_MEM_LABELS;
 
     strncpy(table->labels[table->count].name, name, TEXT_SIZE - 1);
@@ -374,18 +380,18 @@ static VTAErr LT_add(
 
 /*!
  * Find a label in the label table (LT).
- * 
+ *
  * \param table     Label table.
  * \param name      Name of the label to find.
- * 
+ *
  * \return UOP index if found (>= 0); -1 otherwise.
 */
 static int LT_find(
-    const VTALT *table, 
+    const VTALT *table,
     const char  *name
-) 
+)
 {
-    for (int i = 0; i < table->count; i++) 
+    for (int i = 0; i < table->count; i++)
     {
         if (strcmp(table->labels[i].name, name) == 0)
             return (int)table->labels[i].uopIdx;
@@ -399,10 +405,10 @@ static int LT_find(
  * \brief Get the next token without moving the cursor.
  *
  * \param ctx Parser context with cursor.
- * 
+ *
  * \return Next token in the context.
 */
-static VTAToken peekNextToken(const VTAParserContext *ctx) 
+static VTAToken peekNextToken(const VTAParserContext *ctx)
 {
     VTAParserContext tempCtx = *ctx;
     return getNextToken(&tempCtx);
@@ -411,32 +417,32 @@ static VTAToken peekNextToken(const VTAParserContext *ctx)
 
 /*!
  * \brief Go on with the text, skipping white spaces and comments.
- * 
+ *
  * Count line when encountering `\n` and move the cursor when encountering white spaces and comments.
- * 
+ *
  * \note
  * - Current supported comment formats: `#` (python-like), `//` (C-like).
- * 
+ *
  * \param ctx Input context.
 */
-static void skipWhiteSpaceAndComments(VTAParserContext *ctx) 
+static void skipWhiteSpaceAndComments(VTAParserContext *ctx)
 {
-    while (*ctx->cursor != '\0') 
+    while (*ctx->cursor != '\0')
     {
         if (*ctx->cursor == '\n')
             break;
-        
-        if (isspace((unsigned char)*ctx->cursor)) 
+
+        if (isspace((unsigned char)*ctx->cursor))
         {
             ctx->cursor++;
             continue;
         }
 
-        if (*ctx->cursor == '#' || (*ctx->cursor == '/' && *(ctx->cursor + 1) == '/')) 
+        if (*ctx->cursor == '#' || (*ctx->cursor == '/' && *(ctx->cursor + 1) == '/'))
         {
             while (*ctx->cursor != '\0' && *ctx->cursor != '\n')
                 ctx->cursor++;
-            
+
             continue;
         }
 
@@ -450,19 +456,19 @@ static void skipWhiteSpaceAndComments(VTAParserContext *ctx)
  *
  * Remove white spaces and comments, check if is either a digit, identificator, special character
  * and produce an output `VTAToken`.
- * 
+ *
  * \param ctx Context parser from the input.
- * 
+ *
  * \return Next token.
 */
-static VTAToken getNextToken(VTAParserContext *ctx) 
+static VTAToken getNextToken(VTAParserContext *ctx)
 {
     VTAToken token;
     memset(&token, 0, sizeof(VTAToken));
 
     skipWhiteSpaceAndComments(ctx);
 
-    if (*ctx->cursor == '\n') 
+    if (*ctx->cursor == '\n')
     {
         token.type = TOKEN_EOL;
         strcpy(token.text, "\\n");
@@ -473,16 +479,16 @@ static VTAToken getNextToken(VTAParserContext *ctx)
         return token;
     }
 
-    if (*ctx->cursor == '\0') 
+    if (*ctx->cursor == '\0')
     {
         token.type = TOKEN_EOF;
         return token;
     }
 
     if (
-        isdigit((unsigned char)*ctx->cursor) || 
+        isdigit((unsigned char)*ctx->cursor) ||
         (*ctx->cursor == '-' && isdigit((unsigned char)*(ctx->cursor + 1)))
-    ) 
+    )
     {
         token.type = TOKEN_INT;
 
@@ -490,7 +496,7 @@ static VTAToken getNextToken(VTAParserContext *ctx)
         i = 0;
         tooLong = 0;
 
-        if (*ctx->cursor == '-') 
+        if (*ctx->cursor == '-')
         {
             if (i < TEXT_SIZE - 1)
                 token.text[i++] = *ctx->cursor;
@@ -500,7 +506,7 @@ static VTAToken getNextToken(VTAParserContext *ctx)
             ctx->cursor++;
         }
 
-        while (isdigit((unsigned char)*ctx->cursor)) 
+        while (isdigit((unsigned char)*ctx->cursor))
         {
             if (i < TEXT_SIZE - 1)
                 token.text[i++] = *ctx->cursor;
@@ -512,24 +518,24 @@ static VTAToken getNextToken(VTAParserContext *ctx)
 
         token.text[i] = '\0';
 
-        if (tooLong) 
+        if (tooLong)
         {
             token.type = TOKEN_ERROR;
             return token;
         }
 
         errno = 0;
-        
+
         char *endPtr;
         long long value;
-        
+
         value = strtoll(token.text, &endPtr, 10);
 
         if (
             errno == ERANGE ||
             endPtr == token.text ||
             *endPtr != '\0'
-        ) 
+        )
         {
             token.type = TOKEN_ERROR;
             return token;
@@ -540,7 +546,7 @@ static VTAToken getNextToken(VTAParserContext *ctx)
         return token;
     }
 
-    if (isalpha((unsigned char)*ctx->cursor) || *ctx->cursor == '_') 
+    if (isalpha((unsigned char)*ctx->cursor) || *ctx->cursor == '_')
     {
         token.type = TOKEN_IDENTIFIER;
 
@@ -548,19 +554,19 @@ static VTAToken getNextToken(VTAParserContext *ctx)
         i = 0;
 
         while (
-            (isalnum((unsigned char)*ctx->cursor)   || 
-            *ctx->cursor == '_'                     || 
-            *ctx->cursor == '.')                    && 
+            (isalnum((unsigned char)*ctx->cursor)   ||
+            *ctx->cursor == '_'                     ||
+            *ctx->cursor == '.')                    &&
             i < TEXT_SIZE-1
-        ) 
+        )
             token.text[i++] = *ctx->cursor++;
-        
+
         token.text[i] = '\0';
 
         return token;
     }
 
-    if (*ctx->cursor == '-' && *(ctx->cursor + 1) == '>') 
+    if (*ctx->cursor == '-' && *(ctx->cursor + 1) == '>')
     {
         token.type = TOKEN_PUNCTUATION;
 
@@ -570,7 +576,7 @@ static VTAToken getNextToken(VTAParserContext *ctx)
         return token;
     }
 
-    if (strchr("()[],:", *ctx->cursor) != NULL) 
+    if (strchr("()[],:", *ctx->cursor) != NULL)
     {
         token.type = TOKEN_PUNCTUATION;
 
@@ -581,10 +587,10 @@ static VTAToken getNextToken(VTAParserContext *ctx)
     }
 
     token.type = TOKEN_ERROR;
-    
+
     token.text[0] = *ctx->cursor++;
     token.text[1] = '\0';
-    
+
     return token;
 }
 
@@ -594,17 +600,17 @@ static VTAToken getNextToken(VTAParserContext *ctx)
  *
  * \return Status (VTAErr).
 */
-static VTAErr skipToEOL(VTAParserContext *ctx) 
+static VTAErr skipToEOL(VTAParserContext *ctx)
 {
-    while (1) 
+    while (1)
     {
         VTAToken token;
         token = getNextToken(ctx);
 
         if (token.type == TOKEN_EOL || token.type == TOKEN_EOF)
             return VTA_OK;
-        
-        if (token.type == TOKEN_ERROR) 
+
+        if (token.type == TOKEN_ERROR)
             return VTA_ERR_SYNTAX;
     }
 }
@@ -614,10 +620,10 @@ static VTAErr skipToEOL(VTAParserContext *ctx)
  * \brief Get the first token of the next line without moving the cursor.
  *
  * \param ctx Parser context with cursor.
- * 
+ *
  * \return First token at the next line.
 */
-static VTAToken peekNextLine(const VTAParserContext *ctx) 
+static VTAToken peekNextLine(const VTAParserContext *ctx)
 {
     VTAParserContext tempCtx;
     VTAToken token;
@@ -627,7 +633,7 @@ static VTAToken peekNextLine(const VTAParserContext *ctx)
     memset(&token, 0, sizeof(token));
 
     status = skipToEOL(&tempCtx);
-    if (status != VTA_OK) 
+    if (status != VTA_OK)
     {
         token.type = TOKEN_ERROR;
         return token;
@@ -641,24 +647,24 @@ static VTAToken peekNextLine(const VTAParserContext *ctx)
  * \brief Parse the micro-operation line. It consumes the EOL/EOF token.
  * \note Expect: INT, INT, INT EOL
  * \note Example: 10, 20, 30
- * 
+ *
  * \param ctx           Context parser from the input.
  * \param firstToken    First token on the UOP line.
  * \param parsedUop     UOP to parse. It gets reset at the beginning.
- * 
+ *
  * \return Status (VTAErr).
 */
 static VTAErr parseUopLine(
     VTAParserContext    *ctx,
     VTAToken            firstToken,
     VTAUop              *parsedUop
-) 
+)
 {
     memset(parsedUop, 0, sizeof(*parsedUop));
 
     if (firstToken.type != TOKEN_INT)
         return VTA_ERR_SYNTAX;
-    
+
     if (firstToken.value < 0)
         return VTA_ERR_OUT_OF_RANGE;
 
@@ -673,13 +679,13 @@ static VTAErr parseUopLine(
     VTAToken token;
     token = getNextToken(ctx);
 
-    if (token.type != TOKEN_PUNCTUATION || strcmp(token.text, ",") != 0) 
+    if (token.type != TOKEN_PUNCTUATION || strcmp(token.text, ",") != 0)
         return VTA_ERR_SYNTAX;
 
     token = getNextToken(ctx);
     if (token.type != TOKEN_INT)
         return VTA_ERR_SYNTAX;
-    
+
     if (token.value < 0)
         return VTA_ERR_OUT_OF_RANGE;
 
@@ -687,20 +693,20 @@ static VTAErr parseUopLine(
     maxSrc = (UINT64_C(1) << VTA_LOG_ACC_BUFF_DEPTH) - 1;
 
     if ((uint64_t)token.value > maxSrc)
-        return VTA_ERR_OUT_OF_RANGE;    
+        return VTA_ERR_OUT_OF_RANGE;
 
     parsedUop->src_idx = (uint32_t)token.value;
 
     token = getNextToken(ctx);
 
-    if (token.type != TOKEN_PUNCTUATION || strcmp(token.text, ",") != 0) 
+    if (token.type != TOKEN_PUNCTUATION || strcmp(token.text, ",") != 0)
         return VTA_ERR_SYNTAX;
 
     token = getNextToken(ctx);
     if (token.type != TOKEN_INT)
         return VTA_ERR_SYNTAX;
-    
-    if (token.value < 0) 
+
+    if (token.value < 0)
         return VTA_ERR_OUT_OF_RANGE;
 
     uint64_t maxWgt;
@@ -721,12 +727,12 @@ static VTAErr parseUopLine(
 
 /*!
  * \brief Parse the end of an uop. It must end with a "end of line"/"end of file" token.
- * 
+ *
  * \param ctx Context for the input.
- * 
+ *
  * \return Status (VTAErr).
 */
-static VTAErr parseInstructionEnd(VTAParserContext *ctx) 
+static VTAErr parseInstructionEnd(VTAParserContext *ctx)
 {
     VTAToken token;
     token = getNextToken(ctx);
@@ -744,14 +750,14 @@ static VTAErr parseInstructionEnd(VTAParserContext *ctx)
  * \param ctx   Context to take the string from.
  * \param start Beginning of the range.
  * \param end   End of the range.
- * 
+ *
  * \return Status (VTAErr).
 */
 static VTAErr parseRange(
-    VTAParserContext    *ctx, 
-    uint32_t            *start, 
+    VTAParserContext    *ctx,
+    uint32_t            *start,
     uint32_t            *end
-) 
+)
 {
     VTAErr status;
     status = expectToken(ctx, TOKEN_PUNCTUATION, "[");
@@ -765,7 +771,7 @@ static VTAErr parseRange(
         return VTA_ERR_SYNTAX;
     if (token.value < 0 || (uint64_t)token.value > UINT32_MAX)
         return VTA_ERR_OUT_OF_RANGE;
-    
+
     *start = (uint32_t)token.value;
 
     status = expectToken(ctx, TOKEN_PUNCTUATION, ":");
@@ -778,14 +784,14 @@ static VTAErr parseRange(
         return VTA_ERR_SYNTAX;
     if (token.value < 0 || (uint64_t)token.value > UINT32_MAX)
         return VTA_ERR_OUT_OF_RANGE;
-    
+
     *end = (uint32_t)token.value;
 
-    if (*start > *end) 
+    if (*start > *end)
         return VTA_ERR_OUT_OF_RANGE;
-    
+
     status = expectToken(ctx, TOKEN_PUNCTUATION, "]");
-    
+
     return status;
 }
 
@@ -793,22 +799,22 @@ static VTAErr parseRange(
 /*!
  * \brief Evaluate a range for UOPs and check whether it's valid or not.
  *
- * Check if the range exceeds the maximum depth of the UOP buffer, 
+ * Check if the range exceeds the maximum depth of the UOP buffer,
  * or if there are logical issues like `bgn > end`.
- * 
+ *
  * \param uopBgn Beginning of the UOP range.
  * \param uopEnd End of the UOP range.
- * 
+ *
  * \return Status (VTAErr).
 */
 static VTAErr validateUopRange(
-    uint32_t uopBgn, 
+    uint32_t uopBgn,
     uint32_t uopEnd
-) 
+)
 {
     if (uopBgn >= VTA_UOP_BUFF_DEPTH)
         return VTA_ERR_UOP_OUT_OF_BOUNDS;
-    
+
     if (uopEnd > VTA_UOP_BUFF_DEPTH)
         return VTA_ERR_UOP_OUT_OF_BOUNDS;
 
@@ -823,23 +829,23 @@ static VTAErr validateUopRange(
  * \brief Parse the memory padding part from the parsed instruction string.
  *
  * \param ctx           Context with the string to parse.
- * \param parsedInsn    Instruction to parse. 
- * 
+ * \param parsedInsn    Instruction to parse.
+ *
  * \return Status (VTAErr).
 */
 static VTAErr parseMemPadding(
-    VTAParserContext    *ctx, 
+    VTAParserContext    *ctx,
     VTAParsedInsn       *parsedInsn
-) 
+)
 {
     VTAErr status;
     status = expectToken(ctx, TOKEN_PUNCTUATION, "(");
     if (status != VTA_OK)
         return status;
-    
+
     uint32_t values[N_MEM_PADDING_FACTORS];
 
-    for (int i = 0; i < N_MEM_PADDING_FACTORS; i++) 
+    for (int i = 0; i < N_MEM_PADDING_FACTORS; i++)
     {
         VTAToken token;
         token = getNextToken(ctx);
@@ -847,7 +853,7 @@ static VTAErr parseMemPadding(
         if (token.type != TOKEN_INT)
             return VTA_ERR_SYNTAX;
 
-        if (token.value < 0) 
+        if (token.value < 0)
             return VTA_ERR_OUT_OF_RANGE;
 
         uint64_t maxValue;
@@ -858,7 +864,7 @@ static VTAErr parseMemPadding(
 
         values[i] = (uint32_t)token.value;
 
-        if (i < N_MEM_PADDING_FACTORS - 1) 
+        if (i < N_MEM_PADDING_FACTORS - 1)
         {
             status = expectToken(ctx, TOKEN_PUNCTUATION, ",");
             if (status != VTA_OK)
@@ -886,20 +892,20 @@ static VTAErr parseMemPadding(
  *
  * \param ctx           Context to take the instruction from.
  * \param parsedInsn    Parsed instruction.
- * 
+ *
  * \return Status (VTAErr).
 */
 static VTAErr parseOptionalMemPadding(
-    VTAParserContext    *ctx, 
+    VTAParserContext    *ctx,
     VTAParsedInsn       *parsedInsn
-) 
+)
 {
     VTAToken token;
     token = peekNextToken(ctx);
 
     if (
         token.type == TOKEN_EOL ||
-        token.type == TOKEN_EOF 
+        token.type == TOKEN_EOF
     )
         return parseInstructionEnd(ctx);
 
@@ -928,13 +934,13 @@ static VTAErr parseOptionalMemPadding(
  *
  * \param ctx           Context to take the string instruction from.
  * \param parsedInsn    Instruction to parse. Set to zero at the beginning.
- * 
+ *
  * \return Status (VTAErr).
 */
 static VTAErr parseLoad(
     VTAParserContext    *ctx,
     VTAParsedInsn       *parsedInsn
-) 
+)
 {
     memset(parsedInsn, 0, sizeof(*parsedInsn));
 
@@ -1035,7 +1041,7 @@ static VTAErr parseLoad(
      *
      * LOAD(UOP[sram], MEM[dram, x_size])
      */
-    if (parsedInsn->data.mem.memory_type == VTA_MEM_ID_UOP) 
+    if (parsedInsn->data.mem.memory_type == VTA_MEM_ID_UOP)
     {
         status = expectToken(ctx, TOKEN_PUNCTUATION, ",");
         if (status != VTA_OK)
@@ -1055,8 +1061,8 @@ static VTAErr parseLoad(
         status = expectToken(ctx, TOKEN_PUNCTUATION, "]");
         if (status != VTA_OK)
             return status;
-    } 
-    else 
+    }
+    else
     {
         status = expectToken(ctx, TOKEN_PUNCTUATION, ",");
         if (status != VTA_OK)
@@ -1120,13 +1126,13 @@ static VTAErr parseLoad(
  *
  * \param ctx           Context to take the string instruction from.
  * \param parsedInsn    Instruction to parse. Set to zero at the beginning.
- * 
+ *
  * \return Status (VTAErr).
 */
 static VTAErr parseStore(
     VTAParserContext    *ctx,
     VTAParsedInsn       *parsedInsn
-) 
+)
 {
     memset(parsedInsn, 0, sizeof(*parsedInsn));
 
@@ -1253,13 +1259,13 @@ static VTAErr parseStore(
  *
  * \param ctx           Context to take the string instruction from.
  * \param parsedInsn    Instruction to parse.
- * 
+ *
  * \return Status (VTAErr).
 */
 static VTAErr parseGemmFactors(
-    VTAParserContext    *ctx, 
+    VTAParserContext    *ctx,
     VTAParsedInsn       *parsedInsn
-) 
+)
 {
     VTAErr status;
     status = expectToken(ctx, TOKEN_PUNCTUATION, "(");
@@ -1267,7 +1273,7 @@ static VTAErr parseGemmFactors(
         return status;
 
     uint32_t values[N_GEMM_FACTORS];
-    uint32_t widths[N_GEMM_FACTORS] = 
+    uint32_t widths[N_GEMM_FACTORS] =
     {
         VTA_LOG_ACC_BUFF_DEPTH,
         VTA_LOG_ACC_BUFF_DEPTH,
@@ -1277,7 +1283,7 @@ static VTAErr parseGemmFactors(
         VTA_LOG_WGT_BUFF_DEPTH,
     };
 
-    for (int i = 0; i < N_GEMM_FACTORS; i++) 
+    for (int i = 0; i < N_GEMM_FACTORS; i++)
     {
         VTAToken token;
         token = getNextToken(ctx);
@@ -1296,7 +1302,7 @@ static VTAErr parseGemmFactors(
 
         values[i] = (uint32_t)token.value;
 
-        if (i < N_GEMM_FACTORS - 1) 
+        if (i < N_GEMM_FACTORS - 1)
         {
             status = expectToken(ctx, TOKEN_PUNCTUATION, ",");
             if (status != VTA_OK)
@@ -1324,13 +1330,13 @@ static VTAErr parseGemmFactors(
  *
  * \param ctx           Context to take the string instruction from.
  * \param parsedInsn    Instruction to parse.
- * 
+ *
  * \return Status (VTAErr).
 */
 static VTAErr parseAluFactors(
-    VTAParserContext    *ctx, 
+    VTAParserContext    *ctx,
     VTAParsedInsn       *parsedInsn
-) 
+)
 {
     VTAErr status;
     status = expectToken(ctx, TOKEN_PUNCTUATION, "(");
@@ -1339,15 +1345,15 @@ static VTAErr parseAluFactors(
 
     uint32_t values[N_ALU_FACTORS];
 
-    for (int i = 0; i < N_ALU_FACTORS; i++) 
+    for (int i = 0; i < N_ALU_FACTORS; i++)
     {
         VTAToken token;
         token = getNextToken(ctx);
 
         if (token.type != TOKEN_INT)
             return VTA_ERR_SYNTAX;
-        
-        if (token.value < 0) 
+
+        if (token.value < 0)
             return VTA_ERR_OUT_OF_RANGE;
 
         uint64_t maxValue;
@@ -1357,7 +1363,7 @@ static VTAErr parseAluFactors(
             return VTA_ERR_OUT_OF_RANGE;
 
         values[i] = (uint32_t)token.value;
-        
+
         if (i < N_ALU_FACTORS - 1) {
             status = expectToken(ctx, TOKEN_PUNCTUATION, ",");
             if (status != VTA_OK)
@@ -1384,16 +1390,16 @@ static VTAErr parseAluFactors(
  *
  * \param ctx           Context to take the string instructions from.
  * \param parsedInsn    Instruction to parse.
- * \param isGemm        Check to see if the next line is a GEMM operation or not. 
+ * \param isGemm        Check to see if the next line is a GEMM operation or not.
  *                      If not, it's supposed to be ALU.
- * 
+ *
  * \return Status (VTAErr).
 */
 static VTAErr parseFor(
-    VTAParserContext    *ctx, 
-    VTAParsedInsn       *parsedInsn, 
+    VTAParserContext    *ctx,
+    VTAParsedInsn       *parsedInsn,
     int                 isGemm
-) 
+)
 {
     VTAErr status;
     status = expectToken(ctx, TOKEN_PUNCTUATION, "(");
@@ -1404,7 +1410,7 @@ static VTAErr parseFor(
     token = getNextToken(ctx);
     if (token.type != TOKEN_INT)
         return VTA_ERR_SYNTAX;
-    if (token.value <= 0) 
+    if (token.value <= 0)
         return VTA_ERR_OUT_OF_RANGE;
 
     uint64_t maxIter;
@@ -1412,7 +1418,7 @@ static VTAErr parseFor(
 
     if ((uint64_t)token.value > maxIter)
         return VTA_ERR_OUT_OF_RANGE;
-    
+
     if (isGemm)
         parsedInsn->data.gemm.iter_out = (uint32_t)token.value;
     else
@@ -1421,7 +1427,7 @@ static VTAErr parseFor(
     status = expectToken(ctx, TOKEN_PUNCTUATION, ",");
     if (status != VTA_OK)
         return status;
-    
+
     token = getNextToken(ctx);
 
     if (token.type != TOKEN_INT)
@@ -1450,7 +1456,7 @@ static VTAErr parseFor(
     token = getNextToken(ctx);
     if (token.type != TOKEN_IDENTIFIER)
         return VTA_ERR_SYNTAX;
-    
+
     strncpy(parsedInsn->uopBgnLabel, token.text, TEXT_SIZE - 1);
     parsedInsn->uopBgnLabel[TEXT_SIZE-1] = '\0';
 
@@ -1461,7 +1467,7 @@ static VTAErr parseFor(
     token = getNextToken(ctx);
     if (token.type != TOKEN_IDENTIFIER)
         return VTA_ERR_SYNTAX;
-    
+
     strncpy(parsedInsn->uopEndLabel, token.text, TEXT_SIZE - 1);
     parsedInsn->uopEndLabel[TEXT_SIZE-1] = '\0';
 
@@ -1478,7 +1484,7 @@ static VTAErr parseFor(
         nextToken.type == TOKEN_EOF
     )
         return parseInstructionEnd(ctx);
-    
+
     nextToken = getNextToken(ctx);
 
     if (
@@ -1504,13 +1510,13 @@ static VTAErr parseFor(
  *
  * \param ctx           Context to take the string instruction from.
  * \param parsedInsn    Instruction to parse.
- * 
+ *
  * \return Status (VTAErr).
 */
 static VTAErr parseGemm(
-    VTAParserContext    *ctx, 
+    VTAParserContext    *ctx,
     VTAParsedInsn       *parsedInsn
-) 
+)
 {
     VTAErr status;
     status = expectToken(ctx, TOKEN_PUNCTUATION, "(");
@@ -1529,7 +1535,7 @@ static VTAErr parseGemm(
     status = expectToken(ctx, TOKEN_PUNCTUATION, ",");
     if (status != VTA_OK)
         return status;
-    
+
     status = expectToken(ctx, TOKEN_IDENTIFIER, "INP");
     if (status != VTA_OK)
         return status;
@@ -1585,13 +1591,13 @@ static VTAErr parseGemm(
  *
  * \param ctx           Context to take the string instruction from.
  * \param parsedInsn    Instruction to parse.
- * 
+ *
  * \return Status (VTAErr).
 */
 static VTAErr parseGemmRst(
-    VTAParserContext    *ctx, 
+    VTAParserContext    *ctx,
     VTAParsedInsn       *parsedInsn
-) 
+)
 {
     VTAErr status;
     status = expectToken(ctx, TOKEN_PUNCTUATION, "(");
@@ -1631,13 +1637,13 @@ static VTAErr parseGemmRst(
  *
  * \param labelTable Filled (supposedly) table of labels.
  * \param parsedInsn Parsed instruction.
- * 
+ *
  * \return Status (VTAErr).
 */
 static VTAErr resolveUopLabels(
     const VTALT     *labelTable,
     VTAParsedInsn   *parsedInsn
-) 
+)
 {
     int uopBgn, uopEnd;
 
@@ -1663,9 +1669,10 @@ static VTAErr resolveUopLabels(
         return status;
 
     if (
-        parsedInsn->kind == ASM_GEMM ||
-        parsedInsn->kind == ASM_GEMM_RST
-    ) 
+        parsedInsn->kind == ASM_GEMM     ||
+        parsedInsn->kind == ASM_GEMM_RST ||
+        parsedInsn->kind == ASM_GEMM_DIAG
+    )
     {
         if (
             parsedInsn->data.gemm.uop_bgn != (uint32_t)uopBgn ||
@@ -1678,7 +1685,7 @@ static VTAErr resolveUopLabels(
         return VTA_OK;
     }
 
-    if (parsedInsn->kind == ASM_ALU) 
+    if (parsedInsn->kind == ASM_ALU)
     {
         if (
             parsedInsn->data.alu.uop_bgn != (uint32_t)uopBgn ||
@@ -1704,7 +1711,7 @@ static VTAErr resolveUopLabels(
 static VTAErr parseAlu(
     VTAParserContext    *ctx,
     VTAParsedInsn       *parsedInsn
-) 
+)
 {
     VTAErr status;
 
@@ -1738,7 +1745,7 @@ static VTAErr parseAlu(
      *
      * ALU.ADD(DST[0:2], -7)
      */
-    if (token.type == TOKEN_INT) 
+    if (token.type == TOKEN_INT)
     {
         if (token.value < INT16_MIN || token.value > INT16_MAX)
             return VTA_ERR_OUT_OF_RANGE;
@@ -1750,11 +1757,11 @@ static VTAErr parseAlu(
      *
      * ALU.ADD(DST[0:2], SRC[0:2])
      */
-    } 
+    }
     else if (
         token.type == TOKEN_IDENTIFIER &&
         strcmp(token.text, "SRC") == 0
-    ) 
+    )
     {
         parsedInsn->data.alu.use_imm = 0;
 
@@ -1770,8 +1777,8 @@ static VTAErr parseAlu(
             dstEnd != srcEnd
         )
             return VTA_ERR_SYNTAX;
-    } 
-    else 
+    }
+    else
     {
         return VTA_ERR_SYNTAX;
     }
@@ -1796,16 +1803,16 @@ static VTAErr parseAlu(
  * \brief Parse the opcode for the ALU instruction.
  *
  * \note Supported opcodes: `MIN`, `MAX`, `ADD`, `SHR`, `MUL`.
- * 
+ *
  * \param text      ALU instruction text.
  * \param opcode    Opcode for the ALU instruction, to setup.
- * 
+ *
  * \return Status (VTAErr).
 */
 static VTAErr parseAluOpcode(
     const char  *text,
     uint32_t    *opcode
-) 
+)
 {
     if (strcmp(text, "ALU.MIN") == 0) {
         *opcode = VTA_ALU_OPCODE_MIN;
@@ -1838,14 +1845,14 @@ static VTAErr parseAluOpcode(
 
 /*!
  * \brief Helper to check if the ALU mnemonic is right and supported.
- * 
+ *
  * \note Supported opcodes: `MIN`, `MAX`, `ADD`, `SHR`, `MUL`.
- * 
+ *
  * \param text ALU instruction text.
- * 
+ *
  * \return True or False.
 */
-static int isAluMnemonic(const char *text) 
+static int isAluMnemonic(const char *text)
 {
     return strcmp(text, "ALU.MIN") == 0 ||
            strcmp(text, "ALU.MAX") == 0 ||
@@ -1862,16 +1869,16 @@ static int isAluMnemonic(const char *text)
  *
  * Second line:
  * GEMM(...), GEMM.RST(...) or ALU.<OP>(...)
- * 
+ *
  * \param ctx Context to take the instruction string from.
  * \param parsedInsn Instruction to parse. Will be set to zero.
- * 
+ *
  * \return Status (VTAErr).
  */
 static VTAErr parseForInstruction(
     VTAParserContext    *ctx,
     VTAParsedInsn       *parsedInsn
-) 
+)
 {
     VTAToken nextLineToken;
     VTAToken token;
@@ -1888,8 +1895,9 @@ static VTAErr parseForInstruction(
         return VTA_ERR_SYNTAX;
 
     isGemm =
-        strcmp(nextLineToken.text, "GEMM") == 0 ||
-        strcmp(nextLineToken.text, "GEMM.RST") == 0;
+        strcmp(nextLineToken.text, "GEMM")      == 0 ||
+        strcmp(nextLineToken.text, "GEMM.RST")  == 0 ||
+        strcmp(nextLineToken.text, "GEMM.DIAG") == 0;
 
     if (!isGemm && !isAluMnemonic(nextLineToken.text))
         return VTA_ERR_UNKNOWN_MNEMONIC;
@@ -1903,7 +1911,7 @@ static VTAErr parseForInstruction(
     if (token.type != TOKEN_IDENTIFIER)
         return VTA_ERR_SYNTAX;
 
-    if (strcmp(token.text, "GEMM") == 0) 
+    if (strcmp(token.text, "GEMM") == 0)
     {
         parsedInsn->kind                = ASM_GEMM;
         parsedInsn->data.gemm.opcode    = VTA_OPCODE_GEMM;
@@ -1912,11 +1920,20 @@ static VTAErr parseForInstruction(
         return parseGemm(ctx, parsedInsn);
     }
 
-    if (strcmp(token.text, "GEMM.RST") == 0) 
+    if (strcmp(token.text, "GEMM.RST") == 0)
     {
         parsedInsn->kind = ASM_GEMM_RST;
         parsedInsn->data.gemm.opcode = VTA_OPCODE_GEMM;
         parsedInsn->data.gemm.reset_reg = 1;
+
+        return parseGemmRst(ctx, parsedInsn);
+    }
+
+    if (strcmp(token.text, "GEMM.DIAG") == 0)
+    {
+        parsedInsn->kind = ASM_GEMM_DIAG;
+        parsedInsn->data.gemm.opcode = VTA_OPCODE_GEMM_DIAG;
+        parsedInsn->data.gemm.reset_reg = 0;
 
         return parseGemmRst(ctx, parsedInsn);
     }
@@ -1943,20 +1960,20 @@ static VTAErr parseForInstruction(
  * \note `LOAD`, `STORE`/`STOR`,
  * \note `FOR->GEMM`, `FOR->GEMM.RST`
  * \note `FOR->ALU.<OP>`
- * 
+ *
  * \param ctx           Context to take the instruction string from.
  * \param token         Instruction mnemonic. Allegedly.
  * \param parsedInsn    Instruction to parse. Will be set to zero.
- * 
+ *
  * \return Status (VTAErr).
 */
 static VTAErr parseInstruction(
-    VTAParserContext    *ctx, 
-    const VTAToken      *token, 
+    VTAParserContext    *ctx,
+    const VTAToken      *token,
     VTAParsedInsn       *parsedInsn
-) 
+)
 {
-    if (strcmp(token->text, "FINISH") == 0) 
+    if (strcmp(token->text, "FINISH") == 0)
     {
         memset(parsedInsn, 0, sizeof(*parsedInsn));
 
@@ -1966,7 +1983,7 @@ static VTAErr parseInstruction(
         return parseInstructionEnd(ctx);
     }
 
-    if (strcmp(token->text, "NOOP") == 0) 
+    if (strcmp(token->text, "NOOP") == 0)
     {
         memset(parsedInsn, 0, sizeof(*parsedInsn));
 
@@ -1983,7 +2000,7 @@ static VTAErr parseInstruction(
     if (strcmp(token->text, "STORE") == 0 || strcmp(token->text, "STOR") == 0)
         return parseStore(ctx, parsedInsn);
 
-    if (strcmp(token->text, "FOR") == 0) 
+    if (strcmp(token->text, "FOR") == 0)
         return parseForInstruction(ctx, parsedInsn);
 
     return VTA_ERR_UNKNOWN_MNEMONIC;
@@ -1993,12 +2010,12 @@ static VTAErr parseInstruction(
 /*!
  * \brief Finalize the instruction inside the instruction buffer.
  *
- * \param parsedInsn    Instruction already parsed. 
+ * \param parsedInsn    Instruction already parsed.
  *                      Based on its `kind`, register a different type of Insn inside the buffer.
  * \param insnBuffer    Buffer where there are the finalized instructions.
  * \param maxInsn       Max number of instruction that can be inside the buffer.
  * \param numInsn       Current number of finalized instructions.
- * 
+ *
  * \return Status (VTAErr).
 */
 static VTAErr emitInstruction(
@@ -2006,12 +2023,12 @@ static VTAErr emitInstruction(
     VTAGenericInsn      *insnBuffer,
     int                  maxInsn,
     int                 *numInsn
-) 
+)
 {
     if (*numInsn >= maxInsn)
         return VTA_ERR_INSN_BUFFER_FULL;
 
-    switch (parsedInsn->kind) 
+    switch (parsedInsn->kind)
     {
         case ASM_LOAD:
         case ASM_STORE:
@@ -2029,6 +2046,7 @@ static VTAErr emitInstruction(
 
         case ASM_GEMM:
         case ASM_GEMM_RST:
+        case ASM_GEMM_DIAG:
             memcpy(
                 &insnBuffer[*numInsn],
                 &parsedInsn->data.gemm,
@@ -2062,14 +2080,14 @@ static VTAErr emitInstruction(
  * \param ctx           Context to take the instruction string from.
  * \param firstToken    First token on the line.
  * \param edges         Transition to update after the parsing. Set to zero.
- * 
+ *
  * \return Status (VTAErr).
 */
 static VTAErr parseDependencyLine(
-    VTAParserContext            *ctx, 
-    const VTAToken              *firstToken, 
+    VTAParserContext            *ctx,
+    const VTAToken              *firstToken,
     VTADependenciesTransition   *edges
-) 
+)
 {
     memset(edges, 0, sizeof(*edges));
 
@@ -2088,9 +2106,9 @@ static VTAErr parseDependencyLine(
         VTAToken token;
         token = getNextToken(ctx);
 
-        if (token.type != TOKEN_IDENTIFIER) 
+        if (token.type != TOKEN_IDENTIFIER)
             return VTA_ERR_SYNTAX;
-        
+
         strncpy(source, token.text, sizeof(source) - 1);
         source[sizeof(source) - 1] = '\0';
 
@@ -2106,31 +2124,31 @@ static VTAErr parseDependencyLine(
         strncpy(target, token.text, sizeof(target) - 1);
         target[sizeof(target) - 1] = '\0';
 
-        if (strcmp(source, "EX") == 0 && strcmp(target, "LD") == 0) 
+        if (strcmp(source, "EX") == 0 && strcmp(target, "LD") == 0)
         {
             if (edges->ex_ld)
                 return VTA_ERR_SYNTAX;
             edges->ex_ld = 1;
-        } 
-        else if (strcmp(source, "EX") == 0 && strcmp(target, "ST") == 0) 
+        }
+        else if (strcmp(source, "EX") == 0 && strcmp(target, "ST") == 0)
         {
             if (edges->ex_st)
                 return VTA_ERR_SYNTAX;
             edges->ex_st = 1;
-        } 
-        else if (strcmp(source, "LD") == 0 && strcmp(target, "EX") == 0) 
+        }
+        else if (strcmp(source, "LD") == 0 && strcmp(target, "EX") == 0)
         {
             if (edges->ld_ex)
                 return VTA_ERR_SYNTAX;
             edges->ld_ex = 1;
-        } 
-        else if (strcmp(source, "ST") == 0 && strcmp(target, "EX") == 0) 
+        }
+        else if (strcmp(source, "ST") == 0 && strcmp(target, "EX") == 0)
         {
             if (edges->st_ex)
                 return VTA_ERR_SYNTAX;
             edges->st_ex = 1;
-        } 
-        else 
+        }
+        else
         {
             return VTA_ERR_SYNTAX;
         }
@@ -2139,12 +2157,12 @@ static VTAErr parseDependencyLine(
 
         if (token.type == TOKEN_PUNCTUATION && strcmp(token.text, ",") == 0)
             continue;
-        
+
         if (token.type == TOKEN_PUNCTUATION && strcmp(token.text, ")") == 0)
             break;
 
         return VTA_ERR_SYNTAX;
-    }   
+    }
 
     return parseInstructionEnd(ctx);
 }
@@ -2161,11 +2179,11 @@ static VTAErr applyDependencies(
     VTAParsedInsn                   *parsedInsn,
     const VTADependenciesTransition *popEdges,
     const VTADependenciesTransition *pushEdges
-) 
+)
 {
     memset(&parsedInsn->deps, 0, sizeof(parsedInsn->deps));
 
-    switch (parsedInsn->kind) 
+    switch (parsedInsn->kind)
     {
         case ASM_LOAD:
             if (
@@ -2174,7 +2192,7 @@ static VTAErr applyDependencies(
                 popEdges->st_ex  ||
                 pushEdges->ex_ld ||
                 pushEdges->ex_st ||
-                pushEdges->st_ex 
+                pushEdges->st_ex
             )
                 return VTA_ERR_SYNTAX;
 
@@ -2196,7 +2214,7 @@ static VTAErr applyDependencies(
                 pushEdges->ld_ex
             )
                 return VTA_ERR_SYNTAX;
-            
+
             parsedInsn->deps.pop_prev  = popEdges->ex_st;
             parsedInsn->deps.push_prev = pushEdges->st_ex;
 
@@ -2207,6 +2225,7 @@ static VTAErr applyDependencies(
 
         case ASM_GEMM:
         case ASM_GEMM_RST:
+        case ASM_GEMM_DIAG:
         case ASM_ALU:
             parsedInsn->deps.pop_prev  = popEdges->ld_ex;
             parsedInsn->deps.pop_next  = popEdges->st_ex;
@@ -2226,7 +2245,7 @@ static VTAErr applyDependencies(
             }
 
             break;
-        
+
         case ASM_NOOP:
         case ASM_FINISH:
             if (
@@ -2260,7 +2279,7 @@ static VTAErr applyDependencies(
  * \param estimatedInsn     Estimated number of instructions, after reading the code.
  * \param estimatedUop      Estimated number of UOPs, after reading the code.
  * \param errLine           Error line, if there is an error in the reading.
- * 
+ *
  * \return Status (VTAErr).
 */
 static VTAErr makeLT(
@@ -2271,7 +2290,7 @@ static VTAErr makeLT(
     int          *estimatedInsn,
     int          *estimatedUop,
     int          *errLine
-) 
+)
 {
     VTAParserContext ctx;
 
@@ -2289,7 +2308,7 @@ static VTAErr makeLT(
     VTADependenciesTransition pendingPop;
     memset(&pendingPop, 0, sizeof(pendingPop));
 
-    while (1) 
+    while (1)
     {
         VTAToken token;
         token = getNextToken(&ctx);
@@ -2300,19 +2319,19 @@ static VTAErr makeLT(
         if (token.type == TOKEN_EOL)
             continue;
 
-        if (token.type == TOKEN_ERROR) 
+        if (token.type == TOKEN_ERROR)
         {
             *errLine = ctx.lineNum;
             return VTA_ERR_SYNTAX;
         }
 
-        if (token.type == TOKEN_INT) 
+        if (token.type == TOKEN_INT)
         {
             VTAUop parsedUop;
             VTAErr status;
 
             status = parseUopLine(&ctx, token, &parsedUop);
-            if (status != VTA_OK) 
+            if (status != VTA_OK)
             {
                 *errLine = ctx.lineNum;
                 return status;
@@ -2320,13 +2339,13 @@ static VTAErr makeLT(
 
             currentUopIdx++;
 
-            if (currentUopIdx > VTA_UOP_BUFF_DEPTH) 
+            if (currentUopIdx > VTA_UOP_BUFF_DEPTH)
             {
                 *errLine = ctx.lineNum;
                 return VTA_ERR_UOP_OUT_OF_BOUNDS;
             }
 
-            if (currentUopIdx > (uint32_t)maxUop) 
+            if (currentUopIdx > (uint32_t)maxUop)
             {
                 *errLine = ctx.lineNum;
                 return VTA_ERR_UOP_OUT_OF_BOUNDS;
@@ -2335,7 +2354,7 @@ static VTAErr makeLT(
             continue;
         }
 
-        if (token.type != TOKEN_IDENTIFIER) 
+        if (token.type != TOKEN_IDENTIFIER)
         {
             *errLine = ctx.lineNum;
             return VTA_ERR_SYNTAX;
@@ -2350,15 +2369,15 @@ static VTAErr makeLT(
         if (
             nextToken.type == TOKEN_PUNCTUATION &&
             strcmp(nextToken.text, ":") == 0
-        ) 
+        )
         {
             // * un label cant appear after a pop and before an insn
             if (
                 pendingPop.ex_ld ||
                 pendingPop.ex_st ||
                 pendingPop.ld_ex ||
-                pendingPop.st_ex 
-            ) 
+                pendingPop.st_ex
+            )
             {
                 *errLine = ctx.lineNum;
                 return VTA_ERR_SYNTAX;
@@ -2368,7 +2387,7 @@ static VTAErr makeLT(
 
             VTAErr status;
             status = LT_add(table, token.text, currentUopIdx, ctx.lineNum);
-            if (status != VTA_OK) 
+            if (status != VTA_OK)
             {
                 *errLine = ctx.lineNum;
                 return status;
@@ -2377,7 +2396,7 @@ static VTAErr makeLT(
             continue;
         }
 
-        if (strcmp(token.text, "POP") == 0) 
+        if (strcmp(token.text, "POP") == 0)
         {
             VTAErr status;
 
@@ -2387,14 +2406,14 @@ static VTAErr makeLT(
                 pendingPop.ex_st ||
                 pendingPop.ld_ex ||
                 pendingPop.st_ex
-            ) 
+            )
             {
                 *errLine = ctx.lineNum;
                 return VTA_ERR_SYNTAX;
             }
 
             status = parseDependencyLine(&ctx, &token, &pendingPop);
-            if (status != VTA_OK) 
+            if (status != VTA_OK)
             {
                 *errLine = ctx.lineNum;
                 return status;
@@ -2404,7 +2423,7 @@ static VTAErr makeLT(
         }
 
         // * PUSH without insn
-        if (strcmp(token.text, "PUSH") == 0) 
+        if (strcmp(token.text, "PUSH") == 0)
         {
             *errLine = ctx.lineNum;
             return VTA_ERR_SYNTAX;
@@ -2422,7 +2441,7 @@ static VTAErr makeLT(
             strcmp(token.text, "STORE")     == 0 ||
             strcmp(token.text, "STOR")      == 0 ||
             strcmp(token.text, "FOR")       == 0
-        ) 
+        )
         {
             VTAParsedInsn parsedInsn;
             VTAErr status;
@@ -2431,7 +2450,7 @@ static VTAErr makeLT(
 
             status = parseInstruction(&ctx, &token, &parsedInsn);
 
-            if (status != VTA_OK) 
+            if (status != VTA_OK)
             {
                 *errLine = ctx.lineNum;
                 return status;
@@ -2443,12 +2462,12 @@ static VTAErr makeLT(
 
             nextToken = peekNextToken(&ctx);
 
-            if (nextToken.type == TOKEN_IDENTIFIER && strcmp(nextToken.text, "PUSH") == 0) 
+            if (nextToken.type == TOKEN_IDENTIFIER && strcmp(nextToken.text, "PUSH") == 0)
             {
                 nextToken = getNextToken(&ctx);
 
                 status = parseDependencyLine(&ctx, &nextToken, &pushEdges);
-                if (status != VTA_OK) 
+                if (status != VTA_OK)
                 {
                     *errLine = ctx.lineNum;
                     return status;
@@ -2456,7 +2475,7 @@ static VTAErr makeLT(
             }
 
             status = applyDependencies(&parsedInsn, &pendingPop, &pushEdges);
-            if (status != VTA_OK) 
+            if (status != VTA_OK)
             {
                 *errLine = ctx.lineNum;
                 return status;
@@ -2465,7 +2484,7 @@ static VTAErr makeLT(
 
             IC++;
 
-            if (IC > maxInsn) 
+            if (IC > maxInsn)
             {
                 *errLine = ctx.lineNum;
                 return VTA_ERR_INSN_BUFFER_FULL;
@@ -2485,8 +2504,8 @@ static VTAErr makeLT(
         pendingPop.ex_ld ||
         pendingPop.ex_st ||
         pendingPop.ld_ex ||
-        pendingPop.st_ex 
-    ) 
+        pendingPop.st_ex
+    )
     {
         *errLine = ctx.lineNum;
         return VTA_ERR_SYNTAX;
@@ -2500,7 +2519,7 @@ static VTAErr makeLT(
 
 
 /*!
- * \brief Encode the instructions into the instruction buffer 
+ * \brief Encode the instructions into the instruction buffer
  * and UOPs into the UOPs buffer.
  *
  * \param asmCode       VTA ASM code to read the instruction from.
@@ -2510,7 +2529,7 @@ static VTAErr makeLT(
  * \param uopBuffer     Buffer for the UOPs.
  * \param maxUop        Maximum number of UOPs that can be inside the UOPs buffer.
  * \param labelTable    Table of labels.
- * 
+ *
  * \return Status (VTAErr).
 */
 static VTAErr encodeInstructions(
@@ -2535,7 +2554,7 @@ static VTAErr encodeInstructions(
     VTADependenciesTransition pendingPop;
     memset(&pendingPop, 0, sizeof(pendingPop));
 
-    while (1) 
+    while (1)
     {
         VTAToken token;
         token = getNextToken(&ctx);
@@ -2549,14 +2568,14 @@ static VTAErr encodeInstructions(
         if (token.type == TOKEN_ERROR)
             return VTA_ERR_SYNTAX;
 
-        if (token.type == TOKEN_INT) 
+        if (token.type == TOKEN_INT)
         {
             if (currentUopIdx >= VTA_UOP_BUFF_DEPTH)
                 return VTA_ERR_UOP_OUT_OF_BOUNDS;
 
             if (currentUopIdx >= (uint32_t)maxUop)
                 return VTA_ERR_UOP_BUFFER_FULL;
-            
+
             VTAErr status;
 
             status = parseUopLine(&ctx, token, &uopBuffer[currentUopIdx]);
@@ -2580,7 +2599,7 @@ static VTAErr encodeInstructions(
         if (
             nextToken.type == TOKEN_PUNCTUATION &&
             strcmp(nextToken.text, ":") == 0
-        ) 
+        )
         {
             // * no label between dep
             if (
@@ -2625,7 +2644,7 @@ static VTAErr encodeInstructions(
             strcmp(token.text, "FOR")       == 0 ||
             strcmp(token.text, "NOOP")      == 0 ||
             strcmp(token.text, "FINISH")    == 0
-        ) 
+        )
         {
             VTAParsedInsn parsedInsn;
             memset(&parsedInsn, 0, sizeof(parsedInsn));
@@ -2638,8 +2657,9 @@ static VTAErr encodeInstructions(
             if (
                 parsedInsn.kind == ASM_GEMM ||
                 parsedInsn.kind == ASM_GEMM_RST ||
+                parsedInsn.kind == ASM_GEMM_DIAG ||
                 parsedInsn.kind == ASM_ALU
-            ) 
+            )
             {
                 status = resolveUopLabels(labelTable, &parsedInsn);
                 if (status != VTA_OK)
@@ -2654,7 +2674,7 @@ static VTAErr encodeInstructions(
             if (
                 nextToken.type == TOKEN_IDENTIFIER &&
                 strcmp(nextToken.text, "PUSH") == 0
-            ) 
+            )
             {
                 nextToken = getNextToken(&ctx);
 
@@ -2696,7 +2716,7 @@ static VTAErr encodeInstructions(
  * \brief It's a 2-step assemble:
  * \brief 1. Scan the code to make the label table.
  * \brief 2. Scan the code again to perform the binary encoding.
- * 
+ *
  * \param asmCode       VTA ASM code to read from.
  * \param insnBuffer    Buffer where there will be the encoded instructions.
  * \param maxInsn       Maximum number of instructions that can be in the instruction buffer.
@@ -2704,7 +2724,7 @@ static VTAErr encodeInstructions(
  * \param uopBuffer     Buffer where there will be the encoded UOPs.
  * \param maxUop        Maximum number of UOPs that can be in the UOPs buffer.
  * \param numUop        Actual number of UOPs that will be in the UOPs buffer.
- * 
+ *
  * \return Status (VTAErr).
 */
 VTAErr vtaAssemble(
@@ -2715,12 +2735,12 @@ VTAErr vtaAssemble(
     VTAUop          *uopBuffer,
     int             maxUop,
     int             *numUop
-) 
+)
 {
     if (
-        asmCode     == NULL || 
-        insnBuffer  == NULL || 
-        numInsn     == NULL || 
+        asmCode     == NULL ||
+        insnBuffer  == NULL ||
+        numInsn     == NULL ||
         uopBuffer   == NULL ||
         numUop      == NULL
     )
@@ -2740,9 +2760,9 @@ VTAErr vtaAssemble(
     // *: Step 1: scan to make label table
     VTAErr status;
     status = makeLT(asmCode, &labelTable, maxInsn, maxUop, &estimatedInsn, &estimatedUop, &errLine);
-    if (status != VTA_OK) 
+    if (status != VTA_OK)
         return status;
-    
+
     // *: Step 2: binary encoding
     VTAErr statusEncode;
     statusEncode = encodeInstructions(asmCode, insnBuffer, maxInsn, numInsn, uopBuffer, maxUop, &labelTable);
@@ -2753,4 +2773,3 @@ VTAErr vtaAssemble(
 
     return VTA_OK;
 }
-
