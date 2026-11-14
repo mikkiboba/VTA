@@ -2948,7 +2948,7 @@ static int rtTest_roundTripGemmDiag(int verbose)
         return 1;
     }
 
-    if (firstNumInsn != 1 || firstNumInsn != 3)
+    if (firstNumInsn != 1 || firstNumUop != 3)
     {
         printf("%s Incorrect instruction / UOP count.\n", FAIL_CHAR);
         return 1;
@@ -3002,7 +3002,7 @@ static int rtTest_roundTripGemmDiag(int verbose)
         errors++;
     }
 
-    if (memcmp(firstUop, secondUop, sizeof(VTAUop)) != 0)
+    if (memcmp(firstUop, secondUop, firstNumUop * sizeof(VTAUop)) != 0)
     {
         printf("%s UOP encoding changed.\n", FAIL_CHAR);
         errors++;
@@ -3015,6 +3015,136 @@ static int rtTest_roundTripGemmDiag(int verbose)
 }
 
 
+static int rtTest_roundTripAluDot(int verbose)
+{
+    printHeader("ROUND-TRIP", "Check ALU.DOT round-trip");
+
+    VTAGenericInsn firstInsn[8] = {0};
+    VTAGenericInsn secondInsn[8] = {0};
+
+    VTAUop firstUop[8] = {0};
+    VTAUop secondUop[8] = {0};
+
+    int firstNumInsn, firstNumUop;
+    firstNumInsn = 0;
+    firstNumUop  = 0;
+
+    int secondNumInsn, secondNumUop;
+    secondNumInsn = 0;
+    secondNumUop  = 0;
+
+    const char *asmCode;
+    asmCode =
+        "lbl1_bgn:\n"
+        "0, 0, 0\n"
+        "1, 1, 1\n"
+        "2, 2, 2\n"
+        "lbl1_end:\n"
+        "\n"
+        "POP (LD->EX)\n"
+        "FOR (2, 3) UOP (lbl1_bgn, lbl1_end) "
+        "FACTORS(1, 2, 3, 4)\n"
+        "ALU.DOT(DST[0:3], SRC[0:3])\n"
+        "PUSH (EX->ST)\n";
+
+    VTAErr status = vtaAssemble(
+        asmCode,
+        firstInsn, 8, &firstNumInsn,
+        firstUop, 8, &firstNumUop
+    );
+
+    if (status != VTA_OK)
+    {
+        printf("%s First assembly failed: %d\n",
+               FAIL_CHAR, status);
+        return 1;
+    }
+
+    if (firstNumInsn != 1 || firstNumUop != 3)
+    {
+        printf("%s Incorrect instruction/UOP count.\n",
+               FAIL_CHAR);
+        return 1;
+    }
+
+    const VTAAluInsn *alu =
+        (const VTAAluInsn *)&firstInsn[0];
+
+    if (alu->opcode != VTA_OPCODE_ALU ||
+        alu->alu_opcode != VTA_ALU_OPCODE_DOT ||
+        alu->use_imm != 0)
+    {
+        printf("%s Incorrect ALU.DOT encoding.\n",
+               FAIL_CHAR);
+        return 1;
+    }
+
+    char disassembled[OUT_BUF_SIZE] = {0};
+
+    status = vtaDisassemble(
+        firstInsn, firstNumInsn,
+        firstUop, firstNumUop,
+        disassembled, sizeof(disassembled)
+    );
+
+    if (status != VTA_OK)
+    {
+        printf("%s Disassembly failed: %d\n",
+               FAIL_CHAR, status);
+        return 1;
+    }
+
+    if (strstr(disassembled, "ALU.DOT(") == NULL)
+    {
+        printf("%s ALU.DOT mnemonic missing.\n",
+               FAIL_CHAR);
+        return 1;
+    }
+
+    if (verbose)
+        printf("Generated assembly:\n%s\n", disassembled);
+
+    status = vtaAssemble(
+        disassembled,
+        secondInsn, 8, &secondNumInsn,
+        secondUop, 8, &secondNumUop
+    );
+
+    if (status != VTA_OK)
+    {
+        printf("%s Second assembly failed: %d\n",
+               FAIL_CHAR, status);
+        return 1;
+    }
+
+    if (firstNumInsn != secondNumInsn ||
+        firstNumUop != secondNumUop)
+    {
+        printf("%s Round-trip changed buffer counts.\n",
+               FAIL_CHAR);
+        return 1;
+    }
+
+    if (memcmp(firstInsn, secondInsn,
+               firstNumInsn * sizeof(VTAGenericInsn)) != 0)
+    {
+        printf("%s Instruction encoding changed.\n",
+               FAIL_CHAR);
+        return 1;
+    }
+
+    if (memcmp(firstUop, secondUop,
+               firstNumUop * sizeof(VTAUop)) != 0)
+    {
+        printf("%s UOP encoding changed.\n",
+               FAIL_CHAR);
+        return 1;
+    }
+
+    printf("%s ALU.DOT round-trip passed.\n", PASS_CHAR);
+
+    return 0;
+}
 /* ---------
     TEST RUNNERS
 */
@@ -3054,11 +3184,183 @@ static void assembler_runTests(int *error, int verbose)
 }
 
 
+static int rtTest_roundtripAluShi(int verbose)
+{
+    printHeader("ROUND-TRIP", "Check ALU.SHI round-trip");
+
+    VTAGenericInsn firstInsn[8] = {0};
+    VTAGenericInsn secondInsn[8] = {0};
+    VTAUop firstUop[8] = {0};
+    VTAUop secondUop[8] = {0};
+
+    int nInsn1 = 0, nUop1 = 0;
+    int nInsn2 = 0, nUop2 = 0;
+
+    const char *asmCode =
+        "lbl1_bgn:\n"
+        "4, 4, 0\n"
+        "lbl1_end:\n"
+        "FOR (1, 1) UOP (lbl1_bgn, lbl1_end)\n"
+        "ALU.SHI(DST[0:1], SRC[0:1])\n";
+
+    VTAErr status = vtaAssemble(
+        asmCode, firstInsn, 8, &nInsn1,
+        firstUop, 8, &nUop1
+    );
+
+    if (status != VTA_OK || nInsn1 != 1 || nUop1 != 1)
+    {
+        printf("%s First assembly failed.\n", FAIL_CHAR);
+        return 1;
+    }
+
+    const VTAAluInsn *alu =
+        (const VTAAluInsn *)&firstInsn[0];
+
+    if (alu->opcode != VTA_OPCODE_ALU ||
+        alu->alu_opcode != VTA_ALU_OPCODE_SHI ||
+        alu->use_imm != 0 ||
+        firstUop[0].dst_idx != 4 ||
+        firstUop[0].src_idx != 4)
+    {
+        printf("%s Incorrect ALU.SHI encoding.\n", FAIL_CHAR);
+        return 1;
+    }
+
+    char output[OUT_BUF_SIZE] = {0};
+
+    status = vtaDisassemble(
+        firstInsn, nInsn1, firstUop, nUop1,
+        output, sizeof(output)
+    );
+
+    if (status != VTA_OK ||
+        strstr(output, "ALU.SHI(") == NULL)
+    {
+        printf("%s Disassembly failed.\n", FAIL_CHAR);
+        return 1;
+    }
+
+    if (verbose)
+        printf("Generated assembly:\n%s\n", output);
+
+    status = vtaAssemble(
+        output, secondInsn, 8, &nInsn2,
+        secondUop, 8, &nUop2
+    );
+
+    if (status != VTA_OK ||
+        nInsn1 != nInsn2 ||
+        nUop1 != nUop2)
+    {
+        printf("%s Second assembly failed.\n", FAIL_CHAR);
+        return 1;
+    }
+
+    if (memcmp(firstInsn, secondInsn,
+               nInsn1 * sizeof(VTAGenericInsn)) != 0 ||
+        memcmp(firstUop, secondUop,
+               nUop1 * sizeof(VTAUop)) != 0)
+    {
+        printf("%s Binary round-trip mismatch.\n", FAIL_CHAR);
+        return 1;
+    }
+
+    printf("%s ALU.SHI round-trip passed.\n", PASS_CHAR);
+    return 0;
+}
+
+
+static int rtTest_roundtripWgtDiagLoad(int verbose)
+{
+    printHeader("ROUND-TRIP", "Check WGT_DIAG LOAD");
+
+    VTAGenericInsn firstInsn[4] = {0};
+    VTAGenericInsn secondInsn[4] = {0};
+    VTAUop firstUop[4] = {0};
+    VTAUop secondUop[4] = {0};
+
+    int nInsn1 = 0, nUop1 = 0;
+    int nInsn2 = 0, nUop2 = 0;
+
+    const char *asmCode =
+        "LOAD(WGT_DIAG[0], MEM[100, 1, 9, 9])\n";
+
+    VTAErr status = vtaAssemble(
+        asmCode, firstInsn, 4, &nInsn1,
+        firstUop, 4, &nUop1
+    );
+
+    if (status != VTA_OK || nInsn1 != 1 || nUop1 != 0)
+    {
+        printf("%s First assembly failed.\n", FAIL_CHAR);
+        return 1;
+    }
+
+    const VTAMemInsn *mem = (const VTAMemInsn *)&firstInsn[0];
+
+    if (mem->opcode != VTA_OPCODE_LOAD ||
+        mem->memory_type != VTA_MEM_ID_WGT_DIAG ||
+        mem->sram_base != 0 ||
+        mem->dram_base != 100 ||
+        mem->y_size != 1 ||
+        mem->x_size != 9 ||
+        mem->x_stride != 9)
+    {
+        printf("%s Incorrect WGT_DIAG encoding.\n", FAIL_CHAR);
+        return 1;
+    }
+
+    char output[OUT_BUF_SIZE] = {0};
+
+    status = vtaDisassemble(
+        firstInsn, nInsn1, firstUop, nUop1,
+        output, sizeof(output)
+    );
+
+    if (status != VTA_OK ||
+        strstr(output, "LOAD(WGT_DIAG[") == NULL)
+    {
+        printf("%s Disassembly failed.\n", FAIL_CHAR);
+        return 1;
+    }
+
+    if (verbose)
+        printf("Generated assembly:\n%s\n", output);
+
+    status = vtaAssemble(
+        output, secondInsn, 4, &nInsn2,
+        secondUop, 4, &nUop2
+    );
+
+    if (status != VTA_OK ||
+        nInsn1 != nInsn2 ||
+        nUop1 != nUop2)
+    {
+        printf("%s Second assembly failed.\n", FAIL_CHAR);
+        return 1;
+    }
+
+    if (memcmp(firstInsn, secondInsn,
+               nInsn1 * sizeof(VTAGenericInsn)) != 0)
+    {
+        printf("%s Binary encoding changed.\n", FAIL_CHAR);
+        return 1;
+    }
+
+    printf("%s WGT_DIAG LOAD round-trip passed.\n", PASS_CHAR);
+    return 0;
+}
+
+
 static void roundTrip_runTests(int *error, int verbose)
 {
     *error += rtTest_roundtripLoad(verbose);
     *error += rtTest_roundtripGemm(verbose);
     *error += rtTest_roundTripGemmDiag(verbose);
+    *error += rtTest_roundTripAluDot(verbose);
+    *error += rtTest_roundtripAluShi(verbose);
+    *error += rtTest_roundtripWgtDiagLoad(verbose);
 }
 
 

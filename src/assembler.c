@@ -974,6 +974,9 @@ static VTAErr parseLoad(
     else if (strcmp(token.text, "WGT") == 0)
         parsedInsn->data.mem.memory_type = VTA_MEM_ID_WGT;
 
+    else if (strcmp(token.text, "WGT_DIAG") == 0)
+        parsedInsn->data.mem.memory_type = VTA_MEM_ID_WGT_DIAG;
+
     else if (strcmp(token.text, "ACC") == 0)
         parsedInsn->data.mem.memory_type = VTA_MEM_ID_ACC;
 
@@ -1750,6 +1753,12 @@ static VTAErr parseAlu(
         if (token.value < INT16_MIN || token.value > INT16_MAX)
             return VTA_ERR_OUT_OF_RANGE;
 
+        if (
+            parsedInsn->data.alu.alu_opcode == VTA_ALU_OPCODE_DOT ||
+            parsedInsn->data.alu.alu_opcode == VTA_ALU_OPCODE_SHI
+        )
+            return VTA_ERR_SYNTAX;
+
         parsedInsn->data.alu.use_imm    = 1;
         parsedInsn->data.alu.imm        = (int16_t)token.value;
     /*
@@ -1839,6 +1848,18 @@ static VTAErr parseAluOpcode(
         return VTA_OK;
     }
 
+    if (strcmp(text, "ALU.DOT") == 0)
+    {
+        *opcode = VTA_ALU_OPCODE_DOT;
+        return VTA_OK;
+    }
+
+    if (strcmp(text, "ALU.SHI") == 0)
+    {
+        *opcode = VTA_ALU_OPCODE_SHI;
+        return VTA_OK;
+    }
+
     return VTA_ERR_UNKNOWN_MNEMONIC;
 }
 
@@ -1858,7 +1879,9 @@ static int isAluMnemonic(const char *text)
            strcmp(text, "ALU.MAX") == 0 ||
            strcmp(text, "ALU.ADD") == 0 ||
            strcmp(text, "ALU.SHR") == 0 ||
-           strcmp(text, "ALU.MUL") == 0 ;
+           strcmp(text, "ALU.MUL") == 0 ||
+           strcmp(text, "ALU.DOT") == 0 ||
+           strcmp(text, "ALU.SHI") == 0;
 }
 
 /*!

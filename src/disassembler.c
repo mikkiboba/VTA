@@ -471,6 +471,10 @@ VTAErr vtaDisassemble(
                         memoryType = "WGT";
                         break;
 
+                    case VTA_MEM_ID_WGT_DIAG:
+                        memoryType = "WGT.DIAG";
+                        break;
+
                     case VTA_MEM_ID_ACC:
                         memoryType = "ACC";
                         break;
@@ -654,6 +658,26 @@ VTAErr vtaDisassemble(
 
                     case VTA_ALU_OPCODE_MUL:
                         aluMnemonic = "ALU.MUL";
+                        break;
+
+                    case VTA_ALU_OPCODE_DOT:
+                        if (alu->use_imm)
+                        {
+                            free(labels);
+                            return VTA_ERR_UNKNOWN_OPCODE;
+                        }
+
+                        aluMnemonic = "ALU.DOT";
+                        break;
+
+                    case VTA_ALU_OPCODE_SHI:
+                        if (alu->use_imm)
+                        {
+                            free(labels);
+                            return VTA_ERR_UNKNOWN_OPCODE;
+                        }
+
+                        aluMnemonic = "ALU.SHI";
                         break;
 
                     default:
