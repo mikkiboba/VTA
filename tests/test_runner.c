@@ -3353,6 +3353,168 @@ static int rtTest_roundtripWgtDiagLoad(int verbose)
 }
 
 
+static int rtTest_roundtripAccToInp(int verbose)
+{
+    printHeader(
+        "ROUND-TRIP",
+        "Check ACC_TO_INP round-trip"
+    );
+
+    VTAGenericInsn firstInsn[4] = {0};
+    VTAGenericInsn secondInsn[4] = {0};
+
+    VTAUop firstUop[4] = {0};
+    VTAUop secondUop[4] = {0};
+
+    int nInsn1 = 0, nUop1 = 0;
+    int nInsn2 = 0, nUop2 = 0;
+
+    const char *asmCode =
+        "POP (LD->EX, ST->EX)\n"
+        "ACC_TO_INP(INP[2], ACC[4], 3)\n"
+        "PUSH (EX->LD, EX->ST)\n";
+
+    VTAErr status = vtaAssemble(
+        asmCode,
+        firstInsn, 4, &nInsn1,
+        firstUop, 4, &nUop1
+    );
+
+    if (status != VTA_OK || nInsn1 != 1 || nUop1 != 0)
+    {
+        printf(
+            "%s First assembly failed "
+            "(status=%d, insn=%d, uop=%d).\n",
+            FAIL_CHAR, status, nInsn1, nUop1
+        );
+        return 1;
+    }
+
+    const VTAMemInsn *mem =
+        (const VTAMemInsn *)&firstInsn[0];
+
+    if (
+        mem->opcode != VTA_OPCODE_ACC_TO_INP ||
+        mem->memory_type != VTA_MEM_ID_ACC ||
+        mem->sram_base != 4 ||
+        mem->dram_base != 2 ||
+        mem->x_size != 3 ||
+        mem->y_size != 1 ||
+        mem->x_stride != 3
+    )
+    {
+        printf("%s Incorrect ACC_TO_INP encoding.\n",
+               FAIL_CHAR);
+        return 1;
+    }
+
+    // Check COMPUTE-stage dependencies.
+    if (
+        !mem->pop_prev_dep ||
+        !mem->pop_next_dep ||
+        !mem->push_prev_dep ||
+        !mem->push_next_dep
+    )
+    {
+        printf("%s Incorrect dependency encoding.\n",
+               FAIL_CHAR);
+        return 1;
+    }
+
+    char output[OUT_BUF_SIZE] = {0};
+
+    status = vtaDisassemble(
+        firstInsn, nInsn1,
+        firstUop, nUop1,
+        output, sizeof(output)
+    );
+
+    if (
+        status != VTA_OK ||
+        strstr(
+            output,
+            "ACC_TO_INP(INP[2], ACC[4], 3)"
+        ) == NULL
+    )
+    {
+        printf(
+            "%s Disassembly failed (status=%d).\n",
+            FAIL_CHAR, status
+        );
+        printf("Generated assembly:\n%s\n", output);
+        return 1;
+    }
+
+    if (verbose)
+        printf("Generated assembly:\n%s\n", output);
+
+    status = vtaAssemble(
+        output,
+        secondInsn, 4, &nInsn2,
+        secondUop, 4, &nUop2
+    );
+
+    if (
+        status != VTA_OK ||
+        nInsn1 != nInsn2 ||
+        nUop1 != nUop2
+    )
+    {
+        printf(
+            "%s Second assembly failed "
+            "(status=%d).\n",
+            FAIL_CHAR, status
+        );
+        return 1;
+    }
+
+    if (
+        memcmp(
+            firstInsn, secondInsn,
+            nInsn1 * sizeof(VTAGenericInsn)
+        ) != 0
+    )
+    {
+        printf(
+            "%s Instruction encoding changed.\n",
+            FAIL_CHAR
+        );
+        return 1;
+    }
+
+    // ACC_TO_INP must not introduce any UOP.
+    if (nUop2 != 0)
+    {
+        printf("%s Unexpected UOP generated.\n", FAIL_CHAR);
+        return 1;
+    }
+
+    // Negative test: zero-length transfers are invalid.
+    status = vtaAssemble(
+        "ACC_TO_INP(INP[0], ACC[0], 0)\n",
+        firstInsn, 4, &nInsn1,
+        firstUop, 4, &nUop1
+    );
+
+    if (status != VTA_ERR_OUT_OF_RANGE)
+    {
+        printf(
+            "%s Zero-length transfer not rejected "
+            "(status=%d).\n",
+            FAIL_CHAR, status
+        );
+        return 1;
+    }
+
+    printf(
+        "%s ACC_TO_INP round-trip passed.\n",
+        PASS_CHAR
+    );
+
+    return 0;
+}
+
+
 static void roundTrip_runTests(int *error, int verbose)
 {
     *error += rtTest_roundtripLoad(verbose);
@@ -3361,6 +3523,7 @@ static void roundTrip_runTests(int *error, int verbose)
     *error += rtTest_roundTripAluDot(verbose);
     *error += rtTest_roundtripAluShi(verbose);
     *error += rtTest_roundtripWgtDiagLoad(verbose);
+    *error += rtTest_roundtripAccToInp(verbose);
 }
 
 

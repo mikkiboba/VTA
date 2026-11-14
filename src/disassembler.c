@@ -3,6 +3,7 @@
 #include <stdarg.h>
 
 #include "vta.h"
+#include "vta/hw_spec.h"
 #include "vta/hw_spec_const.h"
 
 
@@ -182,6 +183,7 @@ static VTAErr printPop(
         case VTA_OPCODE_ALU:
         case VTA_OPCODE_GEMM:
         case VTA_OPCODE_GEMM_DIAG:
+        case VTA_OPCODE_ACC_TO_INP:
             if (insn->pop_prev_dep) {
                 APPEND(outBuffer, outBufferSize, offset, "LD->EX");
                 printed = 1;
@@ -246,6 +248,7 @@ static VTAErr printPush(
         case VTA_OPCODE_ALU:
         case VTA_OPCODE_GEMM:
         case VTA_OPCODE_GEMM_DIAG:
+        case VTA_OPCODE_ACC_TO_INP:
             if (insn->push_prev_dep)
             {
                 APPEND(outBuffer, outBufferSize, offset, "EX->LD");
@@ -472,7 +475,7 @@ VTAErr vtaDisassemble(
                         break;
 
                     case VTA_MEM_ID_WGT_DIAG:
-                        memoryType = "WGT.DIAG";
+                        memoryType = "WGT_DIAG";
                         break;
 
                     case VTA_MEM_ID_ACC:
@@ -531,6 +534,59 @@ VTAErr vtaDisassemble(
                 }
 
                 status = printPush(genericInsn, outBuffer, outBufferSize, &offset);
+                if (status != VTA_OK)
+                    goto output_full;
+
+                APPEND(
+                    outBuffer, outBufferSize, &offset,
+                    "\n"
+                );
+
+                break;
+            }
+
+            case VTA_OPCODE_ACC_TO_INP:
+            {
+                const VTAMemInsn *mem;
+                mem = (const VTAMemInsn *)&insnBuffer[i];
+
+                // Check the expected experimental encoding.
+                if (
+                    mem->memory_type != VTA_MEM_ID_ACC ||
+                    mem->x_size == 0 ||
+                    mem->y_size != 1 ||
+                    mem->x_stride != mem->x_size ||
+                    mem->y_pad_0 != 0 ||
+                    mem->y_pad_1 != 0 ||
+                    mem->x_pad_0 != 0 ||
+                    mem->x_pad_1 != 0 ||
+                    (uint64_t)mem->sram_base + mem->x_size >
+                        VTA_ACC_BUFF_DEPTH ||
+                    (uint64_t)mem->dram_base + mem->x_size >
+                        VTA_INP_BUFF_DEPTH
+                )
+                {
+                    free(labels);
+                    return VTA_ERR_UNKNOWN_OPCODE;
+                }
+
+                status = printPop(
+                    genericInsn, outBuffer, outBufferSize, &offset
+                );
+                if (status != VTA_OK)
+                    goto output_full;
+
+                APPEND(
+                    outBuffer, outBufferSize, &offset,
+                    "ACC_TO_INP(INP[%u], ACC[%u], %u)\n",
+                    mem->dram_base,
+                    mem->sram_base,
+                    mem->x_size
+                );
+
+                status = printPush(
+                    genericInsn, outBuffer, outBufferSize, &offset
+                );
                 if (status != VTA_OK)
                     goto output_full;
 

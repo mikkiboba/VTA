@@ -7,6 +7,7 @@
 #include <errno.h>
 
 #include "vta.h"
+#include "vta/hw_spec_const.h"
 
 
 /*!
@@ -92,6 +93,8 @@ typedef enum
 {
     ASM_LOAD,
     ASM_STORE,
+
+    ASM_ACC_TO_INP,
 
     /*!
      * \brief GEMM operation with reset <- 0.
@@ -301,6 +304,7 @@ static VTAErr parseAlu(VTAParserContext *ctx, VTAParsedInsn *parsedInsn);
 static VTAErr parseAluOpcode(const char *text, uint32_t *opcode);
 static VTAErr parseForInstruction(VTAParserContext *ctx, VTAParsedInsn *parsedInsn);
 static VTAErr parseInstruction(VTAParserContext *ctx, const VTAToken *token, VTAParsedInsn *parsedInsn);
+static VTAErr parseAccToInp(VTAParserContext *ctx, VTAParsedInsn *parsedInsn);
 
 /*!
  * \brief Helper function to check if the next token is the expected one.
@@ -1119,6 +1123,124 @@ static VTAErr parseLoad(
         return status;
 
     return parseOptionalMemPadding(ctx, parsedInsn);
+}
+
+
+/*!
+ * \brief Parse the ACC_TO_INP instruction.
+ *
+ * Syntax:
+ * ACC_TO_INP(INP[dst], ACC[src], tile_count)
+ *
+ * Transfer tiles directly from ACC SRAM to INP SRAM.
+ */
+static VTAErr parseAccToInp(
+    VTAParserContext *ctx,
+    VTAParsedInsn    *parsedInsn
+)
+{
+    memset(parsedInsn, 0, sizeof(*parsedInsn));
+
+    parsedInsn->kind = ASM_ACC_TO_INP;
+    parsedInsn->data.mem.opcode = VTA_OPCODE_ACC_TO_INP;
+    parsedInsn->data.mem.memory_type = VTA_MEM_ID_ACC;
+
+    VTAErr status;
+    VTAToken token;
+
+    uint32_t dstInp, srcAcc, tileCount;
+
+    status = expectToken(ctx, TOKEN_PUNCTUATION, "(");
+    if (status != VTA_OK)
+        return status;
+
+    status = expectToken(ctx, TOKEN_IDENTIFIER, "INP");
+    if (status != VTA_OK)
+        return status;
+
+    status = expectToken(ctx, TOKEN_PUNCTUATION, "[");
+    if (status != VTA_OK)
+        return status;
+
+    token = getNextToken(ctx);
+    if (token.type != TOKEN_INT)
+        return VTA_ERR_SYNTAX;
+
+    if (token.value < 0 ||
+        (uint64_t)token.value >= VTA_INP_BUFF_DEPTH)
+        return VTA_ERR_OUT_OF_RANGE;
+
+    dstInp = (uint32_t)token.value;
+
+    status = expectToken(ctx, TOKEN_PUNCTUATION, "]");
+    if (status != VTA_OK)
+        return status;
+
+    status = expectToken(ctx, TOKEN_PUNCTUATION, ",");
+    if (status != VTA_OK)
+        return status;
+
+    status = expectToken(ctx, TOKEN_IDENTIFIER, "ACC");
+    if (status != VTA_OK)
+        return status;
+
+    status = expectToken(ctx, TOKEN_PUNCTUATION, "[");
+    if (status != VTA_OK)
+        return status;
+
+    token = getNextToken(ctx);
+    if (token.type != TOKEN_INT)
+        return VTA_ERR_SYNTAX;
+
+    if (token.value < 0 ||
+        (uint64_t)token.value >= VTA_ACC_BUFF_DEPTH)
+        return VTA_ERR_OUT_OF_RANGE;
+
+    srcAcc = (uint32_t)token.value;
+
+    status = expectToken(ctx, TOKEN_PUNCTUATION, "]");
+    if (status != VTA_OK)
+        return status;
+
+    status = expectToken(ctx, TOKEN_PUNCTUATION, ",");
+    if (status != VTA_OK)
+        return status;
+
+    // tile_count
+    token = getNextToken(ctx);
+    if (token.type != TOKEN_INT)
+        return VTA_ERR_SYNTAX;
+
+    if (token.value <= 0 ||
+        (uint64_t)token.value >
+            ((UINT64_C(1) << VTA_MEMOP_SIZE_BIT_WIDTH) - 1) ||
+        (uint64_t)token.value >
+            ((UINT64_C(1) << VTA_MEMOP_STRIDE_BIT_WIDTH) - 1))
+        return VTA_ERR_OUT_OF_RANGE;
+
+    tileCount = (uint32_t)token.value;
+
+    // Check complete SRAM ranges.
+    if ((uint64_t)srcAcc + tileCount > VTA_ACC_BUFF_DEPTH ||
+        (uint64_t)dstInp + tileCount > VTA_INP_BUFF_DEPTH)
+        return VTA_ERR_OUT_OF_RANGE;
+
+    status = expectToken(ctx, TOKEN_PUNCTUATION, ")");
+    if (status != VTA_OK)
+        return status;
+
+    status = parseInstructionEnd(ctx);
+    if (status != VTA_OK)
+        return status;
+
+    // Experimental VTAMemInsn encoding.
+    parsedInsn->data.mem.sram_base = srcAcc;
+    parsedInsn->data.mem.dram_base = dstInp;
+    parsedInsn->data.mem.x_size = tileCount;
+    parsedInsn->data.mem.y_size = 1;
+    parsedInsn->data.mem.x_stride = tileCount;
+
+    return VTA_OK;
 }
 
 
@@ -2020,6 +2142,9 @@ static VTAErr parseInstruction(
     if (strcmp(token->text, "LOAD") == 0)
         return parseLoad(ctx, parsedInsn);
 
+    if (strcmp(token->text, "ACC_TO_INP") == 0)
+        return parseAccToInp(ctx, parsedInsn);
+
     if (strcmp(token->text, "STORE") == 0 || strcmp(token->text, "STOR") == 0)
         return parseStore(ctx, parsedInsn);
 
@@ -2054,6 +2179,7 @@ static VTAErr emitInstruction(
     switch (parsedInsn->kind)
     {
         case ASM_LOAD:
+        case ASM_ACC_TO_INP:
         case ASM_STORE:
         case ASM_FINISH:
         case ASM_NOOP:
@@ -2250,17 +2376,27 @@ static VTAErr applyDependencies(
         case ASM_GEMM_RST:
         case ASM_GEMM_DIAG:
         case ASM_ALU:
+        case ASM_ACC_TO_INP:
             parsedInsn->deps.pop_prev  = popEdges->ld_ex;
             parsedInsn->deps.pop_next  = popEdges->st_ex;
             parsedInsn->deps.push_prev = pushEdges->ex_ld;
             parsedInsn->deps.push_next = pushEdges->ex_st;
 
-            if (parsedInsn->kind == ASM_ALU) {
+            if (parsedInsn->kind == ASM_ALU)
+            {
                 parsedInsn->data.alu.pop_prev_dep  = parsedInsn->deps.pop_prev;
                 parsedInsn->data.alu.pop_next_dep  = parsedInsn->deps.pop_next;
                 parsedInsn->data.alu.push_prev_dep = parsedInsn->deps.push_prev;
                 parsedInsn->data.alu.push_next_dep = parsedInsn->deps.push_next;
-            } else {
+            }
+            else if (parsedInsn->kind == ASM_ACC_TO_INP)
+            {
+                parsedInsn->data.mem.pop_prev_dep  = parsedInsn->deps.pop_prev;
+                parsedInsn->data.mem.pop_next_dep  = parsedInsn->deps.pop_next;
+                parsedInsn->data.mem.push_prev_dep = parsedInsn->deps.push_prev;
+                parsedInsn->data.mem.push_next_dep = parsedInsn->deps.push_next;
+            }
+            else {
                 parsedInsn->data.gemm.pop_prev_dep  = parsedInsn->deps.pop_prev;
                 parsedInsn->data.gemm.pop_next_dep  = parsedInsn->deps.pop_next;
                 parsedInsn->data.gemm.push_prev_dep = parsedInsn->deps.push_prev;
@@ -2461,6 +2597,7 @@ static VTAErr makeLT(
             strcmp(token.text, "FINISH")    == 0 ||
             strcmp(token.text, "NOOP")      == 0 ||
             strcmp(token.text, "LOAD")      == 0 ||
+            strcmp(token.text, "ACC_TO_INP")== 0 ||
             strcmp(token.text, "STORE")     == 0 ||
             strcmp(token.text, "STOR")      == 0 ||
             strcmp(token.text, "FOR")       == 0
@@ -2662,6 +2799,7 @@ static VTAErr encodeInstructions(
 
         if (
             strcmp(token.text, "LOAD")      == 0 ||
+            strcmp(token.text, "ACC_TO_INP")== 0 ||
             strcmp(token.text, "STORE")     == 0 ||
             strcmp(token.text, "STOR")      == 0 ||
             strcmp(token.text, "FOR")       == 0 ||
