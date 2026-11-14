@@ -3,12 +3,13 @@
 #include <stdarg.h>
 
 #include "vta.h"
+#include "vta/hw_spec_const.h"
 
 
-/*! 
+/*!
 * \brief Temporary memory to keep track of which UOP has a label.
 */
-typedef struct 
+typedef struct
 {
     /*!
      * \brief Starting index of the label.
@@ -29,7 +30,7 @@ typedef struct
 
 /*!
  * \brief Macro function to append a string to the (printing) buffer.
- * 
+ *
  * \param outBuffer     Output printing buffer.
  * \param outBufferSize Size of the output printing buffer.
  * \param offsetPtr     Pointer to the offset for the output.
@@ -56,7 +57,7 @@ typedef struct
  * \param outBufferSize Size related to outBuffer.
  * \param offset        Offset for the output.
  * \param format        Text to append
- * 
+ *
  * \return status (VTAErr)
 */
 static VTAErr appendArgument(
@@ -65,9 +66,9 @@ static VTAErr appendArgument(
     size_t      *offset,
     const char  *format,
     ...
-) 
+)
 {
-    if (outBuffer == NULL || offset == NULL || format == NULL) 
+    if (outBuffer == NULL || offset == NULL || format == NULL)
         return VTA_ERR_NULLPTR;
 
     if (outBufferSize == 0 || *offset >= outBufferSize)
@@ -93,7 +94,7 @@ static VTAErr appendArgument(
     {
         *offset = outBufferSize - 1;
         outBuffer[*offset] = '\0';
-        
+
         return VTA_ERR_OUTPUT_BUFFER_FULL;
     }
 
@@ -111,18 +112,18 @@ static VTAErr appendArgument(
  * \param bgn           Where the label begins.
  * \param end           Where the label ends.
  * \param labelCounter  Counter for labels.
- * 
+ *
  * \return ID of the label.
 */
 static int findOrCreateLabel(
-    UopLabelTracker *labels, 
-    int             *numLabels, 
-    uint32_t        bgn, 
-    uint32_t        end, 
+    UopLabelTracker *labels,
+    int             *numLabels,
+    uint32_t        bgn,
+    uint32_t        end,
     int             *labelCounter
-) 
+)
 {
-    for (int i = 0; i < *numLabels; i++) 
+    for (int i = 0; i < *numLabels; i++)
     {
         if (labels[i].bgn == bgn && labels[i].end == end)
             return labels[i].labelID;
@@ -147,7 +148,7 @@ static int findOrCreateLabel(
  * \param outBuffer     Output buffer for the text to print.
  * \param outBufferSize Size of the output buffer.
  * \param offset        Offset for the text.
- * 
+ *
  * \return Status (VTAErr).
 */
 static VTAErr printPop(
@@ -155,9 +156,9 @@ static VTAErr printPop(
     char                    *outBuffer,
     size_t                  outBufferSize,
     size_t                  *offset
-) 
+)
 {
-    VTAErr status; 
+    VTAErr status;
     status = VTA_OK;
 
     if (!insn->pop_prev_dep && !insn->pop_next_dep)
@@ -168,7 +169,7 @@ static VTAErr printPop(
     int printed;
     printed = 0;
 
-    switch (insn->opcode) 
+    switch (insn->opcode)
     {
         case VTA_OPCODE_LOAD:
             if (insn->pop_prev_dep || insn->pop_next_dep)
@@ -180,6 +181,7 @@ static VTAErr printPop(
             break;
         case VTA_OPCODE_ALU:
         case VTA_OPCODE_GEMM:
+        case VTA_OPCODE_GEMM_DIAG:
             if (insn->pop_prev_dep) {
                 APPEND(outBuffer, outBufferSize, offset, "LD->EX");
                 printed = 1;
@@ -207,21 +209,21 @@ output_full:
  * \param outBuffer     Output buffer for the text to print.
  * \param outBufferSize Size of the output buffer.
  * \param offset        Offset for the text.
- * 
+ *
  * \return Status (VTAErr).
 */
 static VTAErr printPush(
-    const VTAGenericInsn    *insn, 
-    char                    *outBuffer, 
+    const VTAGenericInsn    *insn,
+    char                    *outBuffer,
     size_t                  outBufferSize,
-    size_t                  *offset 
-) 
+    size_t                  *offset
+)
 {
     VTAErr status;
     status = VTA_OK;
 
 
-    if (!insn->push_prev_dep && !insn->push_next_dep) 
+    if (!insn->push_prev_dep && !insn->push_next_dep)
         return VTA_OK;
 
     APPEND(outBuffer, outBufferSize, offset, "PUSH (");
@@ -229,7 +231,7 @@ static VTAErr printPush(
     int printed;
     printed = 0;
 
-    switch (insn->opcode) 
+    switch (insn->opcode)
     {
         case VTA_OPCODE_LOAD:
             if (insn->push_prev_dep || insn->push_next_dep)
@@ -243,13 +245,14 @@ static VTAErr printPush(
 
         case VTA_OPCODE_ALU:
         case VTA_OPCODE_GEMM:
-            if (insn->push_prev_dep) 
+        case VTA_OPCODE_GEMM_DIAG:
+            if (insn->push_prev_dep)
             {
                 APPEND(outBuffer, outBufferSize, offset, "EX->LD");
                 printed = 1;
             }
 
-            if (insn->push_next_dep) 
+            if (insn->push_next_dep)
             {
                 if (printed) APPEND(outBuffer, outBufferSize, offset, ", ");
                 APPEND(outBuffer, outBufferSize, offset, "EX->ST");
@@ -326,22 +329,23 @@ VTAErr vtaDisassemble(
 
         if (
             genericInsn->opcode != VTA_OPCODE_ALU   &&
-            genericInsn->opcode != VTA_OPCODE_GEMM
+            genericInsn->opcode != VTA_OPCODE_GEMM  &&
+            genericInsn->opcode != VTA_OPCODE_GEMM_DIAG
         )
             continue;
 
         uint32_t uopBgn;
         uint32_t uopEnd;
 
-        if (genericInsn->opcode == VTA_OPCODE_ALU) 
+        if (genericInsn->opcode == VTA_OPCODE_ALU)
         {
             const VTAAluInsn *alu;
             alu = (const VTAAluInsn *)genericInsn;
 
             uopBgn = alu->uop_bgn;
             uopEnd = alu->uop_end;
-        } 
-        else 
+        }
+        else
         {
             const VTAGemInsn *gemm;
             gemm = (const VTAGemInsn *)genericInsn;
@@ -354,7 +358,7 @@ VTAErr vtaDisassemble(
             uopBgn > uopEnd ||
             uopEnd > (uint32_t)numUop ||
             uopEnd > VTA_UOP_BUFF_DEPTH
-        ) 
+        )
         {
             free(labels);
             return VTA_ERR_UOP_OUT_OF_BOUNDS;
@@ -369,13 +373,13 @@ VTAErr vtaDisassemble(
         );
     }
 
-    if (uopBuffer != NULL) 
+    if (uopBuffer != NULL)
     {
-        for (uint32_t u = 0; u <= (uint32_t)numUop; u++) 
+        for (uint32_t u = 0; u <= (uint32_t)numUop; u++)
         {
-            for (int i = 0; i < numLabels; i++) 
+            for (int i = 0; i < numLabels; i++)
             {
-                if (labels[i].bgn == u) 
+                if (labels[i].bgn == u)
                 {
                     APPEND(
                         outBuffer, outBufferSize, &offset,
@@ -385,9 +389,9 @@ VTAErr vtaDisassemble(
                 }
             }
 
-            for (int i = 0; i < numLabels; i++) 
+            for (int i = 0; i < numLabels; i++)
             {
-                if (labels[i].end == u) 
+                if (labels[i].end == u)
                 {
                     APPEND(
                         outBuffer, outBufferSize, &offset,
@@ -417,11 +421,11 @@ VTAErr vtaDisassemble(
     }
 
     /*
-     * Second step: 
-     * 
+     * Second step:
+     *
      * disassemble insn
     */
-    for (int i = 0; i < numInsn; i++) 
+    for (int i = 0; i < numInsn; i++)
     {
         const VTAGenericInsn *genericInsn;
         genericInsn = &insnBuffer[i];
@@ -429,14 +433,14 @@ VTAErr vtaDisassemble(
         int opcode;
         opcode = genericInsn->opcode;
 
-        switch (opcode) 
+        switch (opcode)
         {
-            case VTA_OPCODE_LOAD: 
+            case VTA_OPCODE_LOAD:
             {
                 const VTAMemInsn *mem;
                 mem = (const VTAMemInsn *)&insnBuffer[i];
 
-                if (mem->x_size == 0) 
+                if (mem->x_size == 0)
                 {
                     APPEND(
                         outBuffer, outBufferSize, &offset,
@@ -453,7 +457,7 @@ VTAErr vtaDisassemble(
 
                 const char *memoryType;
 
-                switch (mem->memory_type) 
+                switch (mem->memory_type)
                 {
                     case VTA_MEM_ID_UOP:
                         memoryType = "UOP";
@@ -480,7 +484,7 @@ VTAErr vtaDisassemble(
                         return VTA_ERR_UNKNOWN_OPCODE;
                 }
 
-                if (mem->memory_type == VTA_MEM_ID_UOP) 
+                if (mem->memory_type == VTA_MEM_ID_UOP)
                 {
                     APPEND(
                         outBuffer,
@@ -492,17 +496,17 @@ VTAErr vtaDisassemble(
                         mem->dram_base,
                         mem->x_size
                     );
-                } 
-                else 
+                }
+                else
                 {
                     int hasPadding;
-                    hasPadding = 
+                    hasPadding =
                         mem->y_pad_0 != 0 ||
                         mem->y_pad_1 != 0 ||
                         mem->x_pad_0 != 0 ||
                         mem->x_pad_1 != 0;
 
-                    if (hasPadding) 
+                    if (hasPadding)
                     {
                         APPEND(
                             outBuffer, outBufferSize, &offset,
@@ -511,8 +515,8 @@ VTAErr vtaDisassemble(
                             memoryType, mem->sram_base, mem->dram_base, mem->y_size, mem->x_size,
                             mem->x_stride, mem->y_pad_0, mem->y_pad_1, mem->x_pad_0, mem->x_pad_1
                         );
-                    } 
-                    else 
+                    }
+                    else
                     {
                         APPEND(
                             outBuffer, outBufferSize, &offset,
@@ -534,7 +538,7 @@ VTAErr vtaDisassemble(
                 break;
             }
 
-            case VTA_OPCODE_STORE: 
+            case VTA_OPCODE_STORE:
             {
                 const VTAMemInsn *mem;
                 mem = (const VTAMemInsn *)&insnBuffer[i];
@@ -551,7 +555,7 @@ VTAErr vtaDisassemble(
                     mem->x_pad_0 != 0 ||
                     mem->x_pad_1 != 0;
 
-                if (hasPadding) 
+                if (hasPadding)
                 {
                     APPEND(
                         outBuffer, outBufferSize, &offset,
@@ -560,8 +564,8 @@ VTAErr vtaDisassemble(
                         mem->dram_base, mem->y_size, mem->x_size, mem->x_stride, mem->sram_base,
                         mem->y_pad_0, mem->y_pad_1, mem->x_pad_0, mem->x_pad_1
                     );
-                } 
-                else 
+                }
+                else
                 {
                     APPEND(
                         outBuffer, outBufferSize, &offset,
@@ -582,7 +586,7 @@ VTAErr vtaDisassemble(
                 break;
             }
 
-            case VTA_OPCODE_ALU: 
+            case VTA_OPCODE_ALU:
             {
                 const VTAAluInsn *alu;
                 alu = (const VTAAluInsn *)&insnBuffer[i];
@@ -601,7 +605,7 @@ VTAErr vtaDisassemble(
                     goto output_full;
 
                 int hasFactors;
-                hasFactors = 
+                hasFactors =
                     alu->dst_factor_out != 0 ||
                     alu->dst_factor_in  != 0 ||
                     alu->src_factor_out != 0 ||
@@ -630,7 +634,7 @@ VTAErr vtaDisassemble(
 
                 const char *aluMnemonic;
 
-                switch (alu->alu_opcode) 
+                switch (alu->alu_opcode)
                 {
                     case VTA_ALU_OPCODE_MIN:
                         aluMnemonic = "ALU.MIN";
@@ -657,15 +661,15 @@ VTAErr vtaDisassemble(
                         return VTA_ERR_UNKNOWN_OPCODE;
                 }
 
-                if (alu->use_imm) 
+                if (alu->use_imm)
                 {
                     APPEND(
                         outBuffer, outBufferSize, &offset,
                         "%s(DST[%u:%u], %d)\n",
                         aluMnemonic, alu->uop_bgn, alu->uop_end, alu->imm
                     );
-                } 
-                else 
+                }
+                else
                 {
                     APPEND(
                         outBuffer, outBufferSize, &offset,
@@ -686,7 +690,8 @@ VTAErr vtaDisassemble(
                 break;
             }
 
-            case VTA_OPCODE_GEMM: 
+            case VTA_OPCODE_GEMM:
+            case VTA_OPCODE_GEMM_DIAG:
             {
                 const VTAGemInsn *gemm;
                 gemm = (const VTAGemInsn *)&insnBuffer[i];
@@ -705,23 +710,23 @@ VTAErr vtaDisassemble(
                     goto output_full;
 
                 int hasFactors;
-                hasFactors = 
+                hasFactors =
                     gemm->dst_factor_out != 0 ||
                     gemm->dst_factor_in  != 0 ||
                     gemm->src_factor_out != 0 ||
                     gemm->src_factor_in  != 0 ||
                     gemm->wgt_factor_out != 0 ||
                     gemm->wgt_factor_in  != 0;
-                
-                if (hasFactors) 
+
+                if (hasFactors)
                 {
                     APPEND(
                         outBuffer, outBufferSize, &offset,
                         "FOR (%u, %u) UOP (lbl%d_bgn, lbl%d_end) "
                         "FACTORS(%u, %u, %u, %u, %u, %u)\n",
                         gemm->iter_out, gemm->iter_in, currentLabel, currentLabel,
-                        gemm->dst_factor_out, gemm->dst_factor_in, 
-                        gemm->src_factor_out, gemm->src_factor_in, 
+                        gemm->dst_factor_out, gemm->dst_factor_in,
+                        gemm->src_factor_out, gemm->src_factor_in,
                         gemm->wgt_factor_out, gemm->wgt_factor_in
                     );
                 }
@@ -734,20 +739,30 @@ VTAErr vtaDisassemble(
                     );
                 }
 
-                if (gemm->reset_reg) 
+                if (gemm->reset_reg)
                 {
+                    if (opcode == VTA_OPCODE_GEMM_DIAG)
+                    {
+                        free(labels);
+                        return VTA_ERR_UNKNOWN_OPCODE;
+                    }
+
                     APPEND(
                         outBuffer, outBufferSize, &offset,
                         "GEMM.RST(ACC[%u:%u])\n",
                         gemm->uop_bgn, gemm->uop_end
                     );
-                } 
-                else 
+                }
+                else
                 {
+                    const char *mnemonic;
+                    mnemonic = opcode == VTA_OPCODE_GEMM_DIAG ? "GEMM.DIAG" : "GEMM";
+
                     APPEND(
                         outBuffer, outBufferSize, &offset,
-                        "GEMM(ACC[%u:%u], INP[%u:%u], WGT[%u:%u])\n",
-                        gemm->uop_bgn, gemm->uop_end, 
+                        "%s(ACC[%u:%u], INP[%u:%u], WGT[%u:%u])\n",
+                        mnemonic,
+                        gemm->uop_bgn, gemm->uop_end,
                         gemm->uop_bgn, gemm->uop_end,
                         gemm->uop_bgn, gemm->uop_end
                     );
@@ -765,7 +780,7 @@ VTAErr vtaDisassemble(
                 break;
             }
 
-            case VTA_OPCODE_FINISH: 
+            case VTA_OPCODE_FINISH:
             {
                 APPEND(
                     outBuffer, outBufferSize, &offset,
@@ -775,7 +790,7 @@ VTAErr vtaDisassemble(
                 break;
             }
 
-            default: 
+            default:
             {
                 free(labels);
                 return VTA_ERR_UNKNOWN_OPCODE;
