@@ -2904,6 +2904,117 @@ static int rtTest_roundtripGemm(int verbose)
 }
 
 
+static int rtTest_roundTripGemmDiag(int verbose)
+{
+    printHeader("ROUND-TRIP", "Check GEMM.DIAG round-trip");
+
+    VTAGenericInsn firstInsn[8]  = {0};
+    VTAGenericInsn secondInsn[8] = {0};
+
+    VTAUop firstUop[8]  = {0};
+    VTAUop secondUop[8] = {0};
+
+    int firstNumInsn, firstNumUop;
+    firstNumInsn = 0;
+    firstNumUop  = 0;
+
+    int secondNumInsn, secondNumUop;
+    secondNumInsn = 0;
+    secondNumUop  = 0;
+
+    int errors;
+    errors = 0;
+
+    const char *asmCode;
+    asmCode =
+        "lbl1_bgn:\n"
+        "10, 20, 30\n"
+        "11, 21, 31\n"
+        "12, 22, 32\n"
+        "lbl1_end:\n"
+        "\n"
+        "POP (LD->EX, ST->EX)\n"
+        "FOR (2, 4) UOP (lbl1_bgn, lbl1_end) "
+        "FACTORS(1, 2, 3, 4, 5, 6)\n"
+        "GEMM.DIAG(ACC[0:3], INP[0:3], WGT[0:3])\n"
+        "PUSH (EX->LD, EX->ST)\n";
+
+    VTAErr status;
+    status = vtaAssemble(asmCode, firstInsn, 8, &firstNumInsn, firstUop, 8, &firstNumUop);
+
+    if (status != VTA_OK)
+    {
+        printf("%s First assembly failed: %d\n", FAIL_CHAR, status);
+        return 1;
+    }
+
+    if (firstNumInsn != 1 || firstNumInsn != 3)
+    {
+        printf("%s Incorrect instruction / UOP count.\n", FAIL_CHAR);
+        return 1;
+    }
+
+    const VTAGemInsn *gemm;
+    gemm = (const VTAGemInsn *)&firstInsn[0];
+
+    if (gemm->opcode != VTA_OPCODE_GEMM_DIAG || gemm->reset_reg != 0)
+    {
+        printf("%s Incorrect GEMM.DIAG encoding.\n", FAIL_CHAR);
+        return 1;
+    }
+
+    char disassembled[OUT_BUF_SIZE] = {0};
+
+    status = vtaDisassemble(firstInsn, firstNumInsn, firstUop, firstNumUop, disassembled, sizeof(disassembled));
+
+    if (status != VTA_OK)
+    {
+        printf("%s Disassembly failed: %d\n", FAIL_CHAR, status);
+        return 1;
+    }
+
+    if (strstr(disassembled, "GEMM.DIAG(") == NULL)
+    {
+        printf("%s GEMM.DIAG mnemonic missing.\n", FAIL_CHAR);
+        return 1;
+    }
+
+    if (verbose)
+        printf("Generated assembly:\n%s\n", disassembled);
+
+    status = vtaAssemble(disassembled, secondInsn, 8, &secondNumInsn, secondUop, 8, &secondNumUop);
+
+    if (status != VTA_OK)
+    {
+        printf("%s Second assembly failed: %d\n", FAIL_CHAR, status);
+        return 1;
+    }
+
+    if (firstNumInsn != secondNumInsn || firstNumUop != secondNumUop)
+    {
+        printf("%s Round-trip changed buffer counts.\n", FAIL_CHAR);
+        return 1;
+    }
+
+    if (memcmp(firstInsn, secondInsn, firstNumInsn * sizeof(VTAGenericInsn)) != 0)
+    {
+        printf("%s Instruction encoding changed.\n", FAIL_CHAR);
+        errors++;
+    }
+
+    if (memcmp(firstUop, secondUop, sizeof(VTAUop)) != 0)
+    {
+        printf("%s UOP encoding changed.\n", FAIL_CHAR);
+        errors++;
+    }
+
+    if (errors == 0)
+        printf("%s GEMM.DIAG round-trip passed.\n", PASS_CHAR);
+
+    return errors;
+}
+
+
 /* ---------
     TEST RUNNERS
 */
@@ -2947,6 +3058,7 @@ static void roundTrip_runTests(int *error, int verbose)
 {
     *error += rtTest_roundtripLoad(verbose);
     *error += rtTest_roundtripGemm(verbose);
+    *error += rtTest_roundTripGemmDiag(verbose);
 }
 
 
