@@ -66,7 +66,7 @@ static void *PACK_RESET_cache_handle = NULL;
 
 typedef struct
 {
-    uint32_t key
+    uint32_t key;
 } DotSignature;
 
 typedef struct
@@ -432,6 +432,7 @@ int main(void)
 
     printf("\nALU statistics:\n");
     printf("ALU.DOT operations:             %llu\n", (unsigned long long)VTAGetALUDotCounter());
+    printf("ALU.SHI operations:             %llu\n", (unsigned long long)VTAGetALUSHICounter());
 
     VTABufferFree(inputBuffer);
     VTABufferFree(weightBuffer);

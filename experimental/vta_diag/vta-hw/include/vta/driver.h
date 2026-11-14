@@ -27,7 +27,7 @@
 #ifndef VTA_DRIVER_H_
 #define VTA_DRIVER_H_
 
-#include <cstdint>
+//#include <cstdint>
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -157,7 +157,13 @@ uint64_t VTAGetDiagMACCounter(void);
  *
  * \brief Return number of ALU.DOT operations executed.
  */
-uint64_t VTAGetAluDotCounter(void);
+uint64_t VTAGetALUDotCounter(void);
+
+/*! (experimental)
+ *
+ * \brief Return number of ALU.DOT operations executed.
+ */
+uint64_t VTAGetALUSHICounter(void);
 
 #ifdef __cplusplus
 }

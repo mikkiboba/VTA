@@ -338,6 +338,9 @@ class Profiler {
   /*! (experimental) Number of ALU.DOT operations executed */
   uint64_t alu_dot_counter{0};
 
+  /*! (experimental) Number of ALU.SHI operations executed */
+  uint64_t alu_shi_counter{0};
+
   /*! \brief instr counter for ALU ops */
   uint64_t alu_counter{0};
   /*! \brief set debug mode */
@@ -356,6 +359,7 @@ class Profiler {
     dense_mac_counter = 0;
     diag_mac_counter = 0;
     alu_dot_counter = 0;
+    alu_shi_counter = 0;
   }
   /*! \return Whether we should skip execution. */
   bool SkipExec() const {
@@ -376,6 +380,7 @@ class Profiler {
        << " \"dense_mac_counter\":" << dense_mac_counter << ",\n"
        << " \"diag_mac_counter\":" << diag_mac_counter << ",\n"
        << " \"alu_dot_counter\":" << alu_dot_counter << ",\n"
+       << " \"alu_shi_counter\":" << alu_shi_counter << ",\n"
 
        << " \"alu_counter\":" << alu_counter << "\n"
        <<"}\n";
@@ -685,7 +690,11 @@ class Device {
    */
   void RunALUPack(const VTAAluInsn *op)
   {
-      prof_->alu_counter += op->iter_out * op->iter_in * (op->uop_end - op->uop_bgn);
+      uint64_t shiOps;
+      shiOps = op->iter_out * op->iter_in * (op->uop_end - op->uop_bgn);
+
+      prof_->alu_counter += shiOps;
+      prof_->alu_shi_counter += shiOps;
 
       if (prof_->SkipExec())
           return;
@@ -891,4 +900,8 @@ uint64_t VTAGetDiagMACCounter(void) {
 
 uint64_t VTAGetALUDotCounter(void) {
   return vta::sim::Profiler::ThreadLocal()->alu_dot_counter;
+}
+
+uint64_t VTAGetALUSHICounter(void) {
+    return vta::sim::Profiler::ThreadLocal()->alu_shi_counter;
 }
