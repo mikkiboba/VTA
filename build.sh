@@ -51,12 +51,12 @@ VTA_CFLAGS=$(
 )
 
 COMMON_CFLAGS=(
+    -I"$SCRIPT_DIR/experimental/vta_diag/vta-hw/include"
     $VTA_CFLAGS
     -g
     -O0
     -I"$TVM_DIR"
     -I"$TVM_DIR/include"
-    -I"$SCRIPT_DIR/experimental/vta_diag/vta-hw/include"
     -I"$TVM_DIR/3rdparty/vta-hw/include"
     -I"$TVM_DIR/3rdparty/dlpack/include"
     -I"$SCRIPT_DIR/include"

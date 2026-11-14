@@ -1935,7 +1935,7 @@ static VTAErr parseForInstruction(
         parsedInsn->data.gemm.opcode = VTA_OPCODE_GEMM_DIAG;
         parsedInsn->data.gemm.reset_reg = 0;
 
-        return parseGemmRst(ctx, parsedInsn);
+        return parseGemm(ctx, parsedInsn);
     }
 
     uint32_t aluOpcode;
