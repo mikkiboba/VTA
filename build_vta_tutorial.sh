@@ -67,6 +67,10 @@ echo "Source : $SOURCE"
 echo "Output : $OUTPUT"
 echo
 
+echo ">>> Building assembler / disassembler..."
+"$ROOT_DIR/build.sh"
+echo
+
 echo ">>> Building experimental VTA simulator..."
 "$ROOT_DIR/experimental/vta_diag/build_diag.sh"
 
@@ -74,6 +78,7 @@ echo
 echo ">>> Building tutorial..."
 
 gcc \
+    -I"$ROOT_DIR/include" \
     -I"$ROOT_DIR/experimental/vta_diag/runtime" \
     -I"$ROOT_DIR/experimental/vta_diag/vta-hw/include" \
     -I"$ROOT_DIR/3rdparty/tvm/vta/include" \
@@ -81,6 +86,7 @@ gcc \
     -I"$ROOT_DIR/3rdparty/tvm/include" \
     -I"$ROOT_DIR/3rdparty/tvm/3rdparty/dlpack/include" \
     "$SOURCE" \
+    "$BUILD_DIR/libvta.a"
     -L"$DIAG_BUILD_DIR" \
     -lvta_fsim_diag \
     -L"$ROOT_DIR/3rdparty/tvm/build" \
