@@ -1062,8 +1062,9 @@ static VTAErr parseLoad(
         if (token.value <= 0 || (uint64_t)token.value > maxSize)
             return VTA_ERR_OUT_OF_RANGE;
 
-        parsedInsn->data.mem.x_size = (uint32_t)token.value;
-
+        parsedInsn->data.mem.x_size   = (uint32_t)token.value;
+        parsedInsn->data.mem.y_size   = 1;
+        parsedInsn->data.mem.x_stride = parsedInsn->data.mem.x_size;
 
         status = expectToken(ctx, TOKEN_PUNCTUATION, "]");
         if (status != VTA_OK)
