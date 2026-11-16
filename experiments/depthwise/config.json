@@ -1,0 +1,25 @@
+
+{
+  "max_instructions": 256,
+  "buffers": {
+    "INP_ADDR": {
+      "memory": "INP",
+      "file": "input.bin"
+    },
+    "DIAG_ADDR": {
+      "memory": "WGT_DIAG",
+      "file": "diagonal.bin"
+    },
+    "PW_ADDR": {
+      "memory": "WGT",
+      "file": "pointwise.bin"
+    },
+    "OUT_ADDR": {
+      "memory": "OUT",
+      "size": 64,
+      "dtype": "int8",
+      "save": "output.bin",
+      "expect": "expected.bin"
+    }
+  }
+}
