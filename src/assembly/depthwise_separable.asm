@@ -7,7 +7,7 @@ dw_begin:
 dw_end:
 
 pw_begin:
-0, 0, 0:
+0, 0, 0
 pw_end:
 
 barrier_begin:

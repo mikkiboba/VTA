@@ -2170,13 +2170,6 @@ static int aTest_dependencyEncoding(int verbose)
     VTAMemInsn *load;
     load = (VTAMemInsn *)&insnBuffer[0];
 
-    if (load->pop_prev_dep != 1)
-    {
-        printf((verbose) ? " %s! LOAD pop_prev_dep expected 1, got %u.\n" : "%s\n", FAIL_CHAR,
-               (unsigned)load->pop_prev_dep);
-        error++;
-    }
-
     if (load->pop_prev_dep != 0)
     {
         printf("%s LOAD pop_prev_dep must be 0.\n", FAIL_CHAR);
