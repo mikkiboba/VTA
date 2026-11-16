@@ -1,0 +1,133 @@
+% !TeX encoding = UTF-8
+% !TeX program = pdflatex
+% !TeX spellcheck = it_IT
+\documentclass[oneside, binding=0.6cm]{sapthesis}
+
+\usepackage{microtype}
+\usepackage[english]{babel}
+\usepackage[utf8]{inputenc}
+\usepackage{hyperref}
+\usepackage{glossaries}
+
+% glossary stuff
+\makeglossaries
+\newglossaryentry{DNN}
+{
+	name = {DNN},
+	description = {Deep Neural Network}
+}
+\newglossaryentry{TPU}
+{
+	name = {TPU},
+	description = {Tensor Processing Unit}
+}
+\newglossaryentry{TU}{
+	name = {TU},
+	description = {Temporal Unit}
+}
+\newglossaryentry{VTA}{
+	name = {VTA},
+	description = {Versatile Tensor Accelerator}
+}
+\newglossaryentry{ISA}{
+	name = {ISA},
+	description = {Instruction Set Architecture}
+}
+\newglossaryentry{GEMM}{
+	name = {GEMM},
+	description = {General Matrix Multiplication}
+}
+\newglossaryentry{ALU}{
+	name = {ALU},
+	description = {}
+}
+
+\hypersetup{pdftitle={Assembler and disassembler for VTA},pdfauthor={Michele Saraceno}}
+
+\title{Assembler and disassembler for VTA}
+\author{---}
+\IDnumber{---}
+\course{Master's Degree in Computer Science}
+\courseorganizer{Faculty of Information Engineering, Informatics, and Statistics}
+\AcademicYear{2025/2026}
+\advisor{Prof. ---}
+\coadvisor{Spero qualcuno di simpatico}
+\authoremail{---.---@studenti.uniroma1.it}
+\copyyear{2026}
+
+\thesistype{Tesi di Laurea Magistrale}
+
+\begin{document}
+	\frontmatter
+	\maketitle
+	\dedication{Dedicato a\\ me}
+	\begin{abstract}
+		Questa tesi parla di me.
+	\end{abstract}
+	\tableofcontents
+	
+	\printglossary
+	
+	\mainmatter
+	
+	\chapter{Introduction}
+		
+	In the last years, Deep Neural Networks (\gls{DNN}) became a fundamental component in modern artificial intelligence fields, such as computer vision, biometrics, and robotics. Their impressive accuracy is, however, correlated to an significant computation cost and the flow of data between the various components of the elaboration system. These aspects represent an important limit in environments characterised by latency, energy consumption, and memory capacity, such as embedded systems and edge devices.\cite{8114708} As a consequence, beside developing new models and alogrithms, research focused on developing hardware architectures, specialised in efficiently executing the most used operations in neural networks.
+	
+	The usage of dedicated accelerators lets the hardware architecture adapt to the specific characteristics of deep learning operations. One of the main examples of this is the Tensor Processing Unit (\gls{TPU}), developed by Google as an accelerator dedicated to neural network inferences and based on a great matrix multiplcation unit composed of multiply-accumulate operators with reduced precision.\cite{Jouppi2017} This kind of approach shows how a significant part of neural networks elaboration could be traced back to tensor and matrix regular operations, which can grant an high parallelism level. However, the efficiency of an accelerator does not depend only on the number of arithmetic operations executable in the temporal unit (\gls{TU}). Data transfer, especially from and towards the external memory, can represent a significant energy and performace cost. Special architectures, such as Eyeriss, have focused on the local reutilisation of data and the reduction of off-chip memory accesses.\cite{7738524}
+	
+	The Versatile Tensor Accelerator (\gls{VTA}), a programmable architecture for deep learning acceleration, finds its place in this environment. Developed within the Apache TVM ecosystem, \gls{VTA} aims for hardware specialisation and programmability, adapting the accelerator to the evolution of models, operators, and numeric format utilised by neural networks. \gls{VTA} makes use of a two-level Instruction Set Architecture (\gls{ISA}): a task-level \gls{ISA} for the coordination of memory and arithmetic operations, and a micro-operation \gls{ISA} for the tensor operations executed by the computational units.\cite{moreau2019hardwaresoftwareblueprintflexibledeep} A fundamental architectural compontent can be found in the General Matrix Multiplication (\gls{GEMM}) unit, dedicated to the execution of dense matrix multiplications, together with a data transfer unit and a arithmetic logic tensor unit. 
+	
+	The presence of a \gls{GEMM} unit makes \gls{VTA} suitable for the execution of operators that can be represented in a dense matrix multiplication format. The evolution of neural network architecture has introduced operators characterised by different computational structures, designed specifically to reduce the number of parameters and operations needed. Among these, the depthwise separable convolution is particularly relevant. This operation factorises a traditional convolution in two distinct phases: a depthwise convolution, which applies an indipendent spatial filter to each input channel, and a subsequent pointwise convolution $\left(1\times 1\right)$, which combines the information obtained from the various channels.\cite{Chollet_2017_CVPR} This separation between spatial and channel correlation is essential, for example, to the Xception architecture and is widely used in models designed to be computationally efficient.
+	
+	The depthwise separable convolution is also one of the main elements of MobileNet, developed with the goal of creating low-latency compact neural networks for embedded and mobile devices. \cite{howard2017mobilenetsefficientconvolutionalneural} Compared to a classical convolution, the depthwise-pointwise factorisation significantly reduces the number of needed operations, separating spacial elaboration from channels mixing.
+	
+	In the case of depthwise convolution, each output channel depends exclusively on the corresponding input channel. If the operation is represented directly as matrix multiplication, the weight matrix takes the shape of a diagonal structure: the elements of the main diagonal represent the weights that are actually used, while every other element that would describe the interaction between different channels are null. The execution of this matrix through a dense \gls{GEMM} allows a correct result to be obtained, but it introduces computations and data transfer that do not contribute to the final output. This highlights a difference between the depthwise operator structure and the computational model for which the \gls{VTA} \gls{GEMM} unit has been designed for.	
+	
+	Another aspect concerns the interaction between the two phases of depthwise separable convolution. The result of the product of the depthwise convolution must become the input of the pointwise convolution. Considered the importance of the data flow in the efficiency measurement of neural network accellerators,\cite{7738524} it is interesting to evaluate the possibility to reduce or completely erase this intermediate transfer of data.
+	
+	Although the decomposition in two separate phases significantly reduces the arithmetical complexity of classic convolution, implementing it efficiently on a dense matrix accelerator introduces additional challenges.
+	
+	A depthwise convolution can be expressed as matrix multiplication using diagonal weights matrices, since each output channel depends on the corresponding input one. However, representing these matrices in a dense format introduces redundant weights with value zero and related arithmetic operations that do not contribute to the result.
+	
+	A second challenge concerns the communication between depthwise and pointwise parts. The output of the former must become the input of the latter. Additional memory operations are introduced when intermediate results are transferred through the external memory even when the computation is done by the same accelerator.
+	
+	These characteristics motivate the investigation of an extension of architecture and instructions that is able to represent the depthwise computation more efficiently and reducing unecessary intermediata data movement.
+	
+	This thesis investigate the extension of the \gls{VTA} instruction set and simulator to improve the execution of depthwise separable convolution. The objective is to evaluate whether specialised instructions can reduce the computational and memory overheads introduced by mapping this operator onto the original dense \gls{GEMM} architecture. This work combines the developement of software tools with modifications to the accelerator's simulated execution model.
+	
+	First, and assembler and disassembler are implemented to translate between a textual representation of assembly \gls{VTA} instructions and their binary encoding, including micro-operations and their dependencies.
+	These tools provid a low-level programming interface for both the original and the experimental instructions.
+	
+	Second, a baseline implementation of the depthwise separable convolution is developed using the original \gls{VTA} computational primitives. This provides a basis for analyse redundant arithmetic operations, weight storage overhead, and intermediate memory transfers.
+	
+	Third, the VTA functional simulator is extended with experimental operations which target the inefficiencies. In particular, \texttt{GEMM.DIAG} introduces a compact diagonal weight representation and a corresponding computation that avoids the redundant multiplications of a dense \gls{GEMM} mapping. Meanwhile, \texttt{ACC\_TO\_INP} enables the direct transfer of accumulator values into the input SRAM, allowing the pointwise part to consume the result of the depthwise computation without having to access the DRAM. 
+	The thesis explores also other experimental \gls{ALU} operations as an alternative for expressing part of the computation.
+	
+	Finally, the proposed extensions are evaluated through complete \gls{VTA} assembly programs. A dedicated execution tool loads assembly source files and experiments data, invokes the assembler, executes the generated instruction stream on the simulator, and validates the results against the reference outputs.
+		
+	An initial experiment involves a $4 \times 4$ input, a $3 \times 3$ kernel, and $16$ channels. The compact diagonal representation reduces depthwise weight storage from $2304$ to $144$ bytes, and the number of depthwise scalar multiply-accumulate (\gls{MAC}) operations from $9216$ to $576$.
+	The direct transfer on-chip eliminates $128$ bytes of intermediate DRAM traffic in the experimental configuration.
+	
+	These results demonstrate the functional correctness of the proposed assembly execution path and quantify specific reductions of computation and memory. However, they do not establish equivalent reductions in execution time or energy consumption, which would require additional performance evaluation. (NOTA: non so se tenere questa frase)
+	
+	This thesis focuses on the design, implementation, and functional validation of \gls{ISA} extensions for depthwise separable convolutions, together with a reusable assembly toolchain for studying their behaviour.		
+	
+	(NOTA: credo di ci siano diverse ripetizioni in questa introduzione, ma penso che sia questo quello a cui serve l'introduzione ad una tesi)
+	
+		
+	\clearpage
+	
+	
+	
+	
+	
+	\backmatter
+ 	\bibliographystyle{unsrt}
+	\bibliography{references}
+	\cleardoublepage
+	\phantomsection % Give this command only if hyperref is loaded
+	\addcontentsline{toc}{chapter}{\bibname}
+	% Here put the code for the bibliography. You can use BibTeX or
+	% the BibLaTeX package or the simple environment thebibliography.
+\end{document}
