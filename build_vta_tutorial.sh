@@ -77,7 +77,14 @@ echo ">>> Building experimental VTA simulator..."
 echo
 echo ">>> Building tutorial..."
 
+VTA_DEFS=(
+    $(python3 \
+        "$ROOT_DIR/experimental/vta_diag/vta-hw/config/vta_config.py" \
+        --defs)
+)
+
 gcc \
+    "${VTA_DEFS[@]}" \
     -I"$ROOT_DIR/include" \
     -I"$ROOT_DIR/experimental/vta_diag/runtime" \
     -I"$ROOT_DIR/experimental/vta_diag/vta-hw/include" \
@@ -86,7 +93,7 @@ gcc \
     -I"$ROOT_DIR/3rdparty/tvm/include" \
     -I"$ROOT_DIR/3rdparty/tvm/3rdparty/dlpack/include" \
     "$SOURCE" \
-    "$BUILD_DIR/libvta.a"
+    "$BUILD_DIR/libvta.a" \
     -L"$DIAG_BUILD_DIR" \
     -lvta_fsim_diag \
     -L"$ROOT_DIR/3rdparty/tvm/build" \

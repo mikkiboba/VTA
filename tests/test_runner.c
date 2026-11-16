@@ -833,14 +833,16 @@ static int dTest_dependencies(int verbose)
     memset(&load, 0, sizeof(load));
     memset(outBuffer, 0, sizeof(outBuffer));
 
-    load.opcode         = VTA_OPCODE_LOAD;
-    load.memory_type    = VTA_MEM_ID_UOP;
-    load.sram_base      = 1;
-    load.dram_base      = 2;
-    load.x_size         = 3;
+    load.opcode        = VTA_OPCODE_LOAD;
+    load.memory_type   = VTA_MEM_ID_INP;
+    load.sram_base     = 1;
+    load.dram_base     = 2;
+    load.y_size        = 1;
+    load.x_size        = 3;
+    load.x_stride      = 3;
 
-    load.pop_prev_dep   = 1;
-    load.push_prev_dep  = 1;
+    load.pop_next_dep  = 1;
+    load.push_next_dep = 1;
 
     VTAErr status = vtaDisassemble(
         (VTAGenericInsn *)&load,
@@ -856,7 +858,7 @@ static int dTest_dependencies(int verbose)
         status,
         outBuffer,
         "POP (EX->LD)\n"
-        "LOAD(UOP[1], MEM[2, 3])\n"
+        "LOAD(INP[1], MEM[2, 1, 3, 3])\n"
         "PUSH (LD->EX)\n\n",
         verbose
     );
@@ -2175,24 +2177,27 @@ static int aTest_dependencyEncoding(int verbose)
         error++;
     }
 
-    if (load->pop_next_dep != 0)
+    if (load->pop_prev_dep != 0)
     {
-        printf((verbose) ? " %s! LOAD pop_next_dep expected 0, got %u.\n" : "%s\n", FAIL_CHAR,
-               (unsigned)load->pop_next_dep);
+        printf("%s LOAD pop_prev_dep must be 0.\n", FAIL_CHAR);
         error++;
     }
 
-    if (load->push_prev_dep != 1)
+    if (load->pop_next_dep != 1)
     {
-        printf((verbose) ? " %s! LOAD push_prev_dep expected 1, got %u.\n" : "%s\n", FAIL_CHAR,
-               (unsigned)load->push_prev_dep);
+        printf("%s LOAD pop_next_dep must be 1.\n", FAIL_CHAR);
         error++;
     }
 
-    if (load->push_next_dep != 0)
+    if (load->push_prev_dep != 0)
     {
-        printf((verbose) ? " %s! LOAD push_next_dep expected 0, got %u.\n" : "%s\n", FAIL_CHAR,
-               (unsigned)load->push_next_dep);
+        printf("%s LOAD push_prev_dep must be 0.\n", FAIL_CHAR);
+        error++;
+    }
+
+    if (load->push_next_dep != 1)
+    {
+        printf("%s LOAD push_next_dep must be 1.\n", FAIL_CHAR);
         error++;
     }
 
@@ -2609,15 +2614,15 @@ static int rtTest_roundtripLoad(int verbose)
         error++;
     }
 
-    if (firstInsn->pop_prev_dep != secondInsn->pop_prev_dep)
+    if (firstInsn->pop_next_dep != secondInsn->pop_next_dep)
     {
-        printf((verbose) ? " %s! POP dependency changed.\n" : "%s\n", FAIL_CHAR);
+        printf("%s POP dependency changed.\n", FAIL_CHAR);
         error++;
     }
 
-    if (firstInsn->push_prev_dep != secondInsn->push_prev_dep)
+    if (firstInsn->push_next_dep != secondInsn->push_next_dep)
     {
-        printf((verbose) ? " %s! PUSH dependency changed.\n" : "%s\n", FAIL_CHAR);
+        printf("%s PUSH dependency changed.\n", FAIL_CHAR);
         error++;
     }
 

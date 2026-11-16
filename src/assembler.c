@@ -2346,11 +2346,23 @@ static VTAErr applyDependencies(
             )
                 return VTA_ERR_SYNTAX;
 
-            parsedInsn->deps.pop_prev  = popEdges->ex_ld;
-            parsedInsn->deps.push_prev = pushEdges->ld_ex;
+            if (
+                parsedInsn->data.mem.memory_type == VTA_MEM_ID_INP ||
+                parsedInsn->data.mem.memory_type == VTA_MEM_ID_WGT ||
+                parsedInsn->data.mem.memory_type == VTA_MEM_ID_WGT_DIAG
+            )
+            {
+                parsedInsn->deps.pop_next  = popEdges->ex_ld;
+                parsedInsn->deps.push_next = pushEdges->ld_ex;
 
-            parsedInsn->data.mem.pop_prev_dep  = parsedInsn->deps.pop_prev;
-            parsedInsn->data.mem.push_prev_dep = parsedInsn->deps.push_prev;
+                parsedInsn->data.mem.pop_next_dep  = parsedInsn->deps.pop_next;
+                parsedInsn->data.mem.push_next_dep = parsedInsn->deps.push_next;
+            }
+            else
+            {
+                if (popEdges->ex_ld || pushEdges->ld_ex)
+                    return VTA_ERR_SYNTAX;
+            }
 
             break;
 
