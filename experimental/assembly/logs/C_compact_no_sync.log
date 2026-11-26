@@ -1,0 +1,121 @@
+FAIL: 64 incorrect output values
+
+===== VTA ASSEMBLY =====
+rst_begin:
+0, 0, 0
+rst_end:
+
+dw_begin:
+0, 0, 0
+dw_end:
+
+pw_begin:
+0, 0, 0
+pw_end:
+
+barrier_begin:
+barrier_end:
+
+LOAD(UOP[0], MEM[5120, 3])
+
+LOAD(INP[0], MEM[256, 1, 36, 36])
+LOAD(WGT_DIAG[0], MEM[512, 1, 9, 9])
+PUSH (LD->EX)
+
+POP (LD->EX)
+FOR (4, 1) UOP (rst_begin, rst_end) FACTORS(1, 0, 0, 0, 0, 0)
+GEMM.RST(ACC[0:1])
+
+FOR (4, 9) UOP (dw_begin, dw_end) FACTORS(1, 0, 9, 1, 0, 1)
+GEMM.DIAG(ACC[1:2], INP[1:2], WGT[1:2])
+
+ACC_TO_INP(INP[0], ACC[0], 4)
+LOAD(WGT[0], MEM[48, 1, 1, 1])
+PUSH (LD->EX)
+
+POP (LD->EX)
+FOR (4, 1) UOP (rst_begin, rst_end) FACTORS(1, 0, 0, 0, 0, 0)
+GEMM.RST(ACC[0:1])
+
+FOR (4, 1) UOP (pw_begin, pw_end) FACTORS(1, 0, 1, 0, 0, 0)
+GEMM(ACC[2:3], INP[2:3], WGT[2:3])
+PUSH (EX->ST)
+
+POP (EX->ST)
+STOR(MEM[1024, 1, 4, 4], ACC[0])
+PUSH (ST->EX)
+
+POP (ST->EX)
+FOR (1, 1) UOP (barrier_begin, barrier_end)
+GEMM.RST(ACC[3:3])
+FINISH
+
+
+===== VTA ASSEMBLY PROGRAM =====
+rst_begin:
+0, 0, 0
+rst_end:
+
+dw_begin:
+0, 0, 0
+dw_end:
+
+pw_begin:
+0, 0, 0
+pw_end:
+
+barrier_begin:
+barrier_end:
+
+LOAD(UOP[0], MEM[5120, 3])
+
+LOAD(INP[0], MEM[256, 1, 36, 36])
+LOAD(WGT_DIAG[0], MEM[512, 1, 9, 9])
+PUSH (LD->EX)
+
+POP (LD->EX)
+FOR (4, 1) UOP (rst_begin, rst_end) FACTORS(1, 0, 0, 0, 0, 0)
+GEMM.RST(ACC[0:1])
+
+FOR (4, 9) UOP (dw_begin, dw_end) FACTORS(1, 0, 9, 1, 0, 1)
+GEMM.DIAG(ACC[1:2], INP[1:2], WGT[1:2])
+
+ACC_TO_INP(INP[0], ACC[0], 4)
+LOAD(WGT[0], MEM[48, 1, 1, 1])
+PUSH (LD->EX)
+
+POP (LD->EX)
+FOR (4, 1) UOP (rst_begin, rst_end) FACTORS(1, 0, 0, 0, 0, 0)
+GEMM.RST(ACC[0:1])
+
+FOR (4, 1) UOP (pw_begin, pw_end) FACTORS(1, 0, 1, 0, 0, 0)
+GEMM(ACC[2:3], INP[2:3], WGT[2:3])
+PUSH (EX->ST)
+
+POP (EX->ST)
+STOR(MEM[1024, 1, 4, 4], ACC[0])
+PUSH (ST->EX)
+
+POP (ST->EX)
+FOR (1, 1) UOP (barrier_begin, barrier_end)
+GEMM.RST(ACC[3:3])
+FINISH
+
+Assembled instructions: 12
+Assembled UOPs:         3
+
+===== EXECUTING VTA PROGRAM =====
+LOAD WGT_DIAG: 144 bytes
+LOAD WGT: 256 bytes
+
+===== NUMERICAL VALIDATION =====
+Pointwise output:
+Output pixel 0:
+-2  2 -4  4 -2  2 -2  2 23 -23  0  0  0  0  0  0 
+Output pixel 1:
+-2  2 -4  4 -2  2 -2  2 25 -25  0  0  0  0  0  0 
+Output pixel 2:
+-2  2 -4  4 -2  2 -2  2 31 -31  0  0  0  0  0  0 
+Output pixel 3:
+-2  2 -4  4 -2  2 -2  2 33 -33  0  0  0  0  0  0 
+FAIL: 64 incorrect values after pointwise.

@@ -1,0 +1,143 @@
+
+===== VTA ASSEMBLY =====
+rst_begin:
+0, 0, 0
+rst_end:
+
+dw_begin:
+0, 0, 0
+dw_end:
+
+pw_begin:
+0, 0, 1
+pw_end:
+
+barrier_begin:
+barrier_end:
+
+LOAD(UOP[0], MEM[5120, 3])
+
+LOAD(INP[0], MEM[256, 1, 36, 36])
+LOAD(WGT_DIAG[0], MEM[512, 1, 9, 9])
+LOAD(WGT[1], MEM[48, 1, 1, 1])
+PUSH (LD->EX)
+
+POP (LD->EX)
+FOR (4, 1) UOP (rst_begin, rst_end) FACTORS(1, 0, 0, 0, 0, 0)
+GEMM.RST(ACC[0:1])
+
+FOR (4, 9) UOP (dw_begin, dw_end) FACTORS(1, 0, 9, 1, 0, 1)
+GEMM.DIAG(ACC[1:2], INP[1:2], WGT[1:2])
+
+ACC_TO_INP(INP[0], ACC[0], 4)
+FOR (4, 1) UOP (rst_begin, rst_end) FACTORS(1, 0, 0, 0, 0, 0)
+GEMM.RST(ACC[0:1])
+
+FOR (4, 1) UOP (pw_begin, pw_end) FACTORS(1, 0, 1, 0, 0, 0)
+GEMM(ACC[2:3], INP[2:3], WGT[2:3])
+PUSH (EX->ST)
+
+POP (EX->ST)
+STOR(MEM[1024, 1, 4, 4], ACC[0])
+PUSH (ST->EX)
+
+POP (ST->EX)
+FOR (1, 1) UOP (barrier_begin, barrier_end)
+GEMM.RST(ACC[3:3])
+FINISH
+
+
+===== VTA ASSEMBLY PROGRAM =====
+rst_begin:
+0, 0, 0
+rst_end:
+
+dw_begin:
+0, 0, 0
+dw_end:
+
+pw_begin:
+0, 0, 1
+pw_end:
+
+barrier_begin:
+barrier_end:
+
+LOAD(UOP[0], MEM[5120, 3])
+
+LOAD(INP[0], MEM[256, 1, 36, 36])
+LOAD(WGT_DIAG[0], MEM[512, 1, 9, 9])
+LOAD(WGT[1], MEM[48, 1, 1, 1])
+PUSH (LD->EX)
+
+POP (LD->EX)
+FOR (4, 1) UOP (rst_begin, rst_end) FACTORS(1, 0, 0, 0, 0, 0)
+GEMM.RST(ACC[0:1])
+
+FOR (4, 9) UOP (dw_begin, dw_end) FACTORS(1, 0, 9, 1, 0, 1)
+GEMM.DIAG(ACC[1:2], INP[1:2], WGT[1:2])
+
+ACC_TO_INP(INP[0], ACC[0], 4)
+FOR (4, 1) UOP (rst_begin, rst_end) FACTORS(1, 0, 0, 0, 0, 0)
+GEMM.RST(ACC[0:1])
+
+FOR (4, 1) UOP (pw_begin, pw_end) FACTORS(1, 0, 1, 0, 0, 0)
+GEMM(ACC[2:3], INP[2:3], WGT[2:3])
+PUSH (EX->ST)
+
+POP (EX->ST)
+STOR(MEM[1024, 1, 4, 4], ACC[0])
+PUSH (ST->EX)
+
+POP (ST->EX)
+FOR (1, 1) UOP (barrier_begin, barrier_end)
+GEMM.RST(ACC[3:3])
+FINISH
+
+Assembled instructions: 12
+Assembled UOPs:         3
+
+===== EXECUTING VTA PROGRAM =====
+LOAD WGT_DIAG: 144 bytes
+LOAD WGT: 256 bytes
+
+===== NUMERICAL VALIDATION =====
+Pointwise output:
+Output pixel 0:
+-9  9 -9  9 -9  9 -9  9 -9  9 -9  9 -9  9 -9  9 
+Output pixel 1:
+-9  9 -9  9 -9  9 -9  9 -9  9 -9  9 -9  9 -9  9 
+Output pixel 2:
+-9  9 -9  9 -9  9 -9  9 -9  9 -9  9 -9  9 -9  9 
+Output pixel 3:
+-9  9 -9  9 -9  9 -9  9 -9  9 -9  9 -9  9 -9  9 
+PASS: depthwise separable convolution works.
+
+===== COMPUTATION STATISTICS =====
+
+C statistics:
+Baseline dense DRAM weights:    2304 bytes
+C compact DRAM weights:         144 bytes
+Baseline dense SRAM footprint:  2304 bytes
+C compact SRAM footprint:       144 bytes
+
+Depthwise computation:
+Baseline dense GEMM MACs:       9216
+C diagonal GEMM MACs:           576
+MAC reduction:                  16.00x
+
+Depthwise -> pointwise:
+Logical intermediate size:      64 bytes
+Baseline intermediate STORE:    64 bytes
+Baseline intermediate LOAD:     64 bytes
+Baseline DRAM traffic:          128 bytes
+C intermediate STORE:           0 bytes
+C intermediate LOAD:            0 bytes
+C intermediate DRAM traffic:    0 bytes
+DRAM traffic reduction:         100.00%
+
+Simulator measured MACs:
+Dense scalar MACs:              1024
+Diagonal scalar MACs:           576
+
+PASS: Full assembly depthwise separable convolution
