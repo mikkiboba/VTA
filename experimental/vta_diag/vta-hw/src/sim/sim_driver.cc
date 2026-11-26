@@ -209,33 +209,36 @@ class SRAM {
   }
 
   // Execute the load instruction on this SRAM
-  void Load(const VTAMemInsn* op,
+    void Load(const VTAMemInsn* op,
             DRAM* dram,
             uint64_t* load_counter,
-            bool skip_exec) {
-    load_counter[0] += (op->x_size * op->y_size) * kElemBytes;
-    if (skip_exec) return;
-    DType* sram_ptr = data_ + op->sram_base;
-    uint8_t* dram_ptr = static_cast<uint8_t*>(dram->GetAddr(
-        op->dram_base * kElemBytes));
-    uint64_t xtotal = op->x_size + op->x_pad_0 + op->x_pad_1;
-    uint32_t ytotal = op->y_size + op->y_pad_0 + op->y_pad_1;
-    uint64_t sram_end = op->sram_base + xtotal * ytotal;
-    CHECK_LE(sram_end, kMaxNumElem);
-    memset(sram_ptr, 0, kElemBytes * xtotal * op->y_pad_0);
-    sram_ptr += xtotal * op->y_pad_0;
+            bool skip_exec)
+    {
+        load_counter[0] += (op->x_size * op->y_size) * kElemBytes;
+        if (skip_exec) return;
+        DType* sram_ptr = data_ + op->sram_base;
+        uint8_t* dram_ptr = static_cast<uint8_t*>(dram->GetAddr(
+            op->dram_base * kElemBytes));
+        uint64_t xtotal = op->x_size + op->x_pad_0 + op->x_pad_1;
+        uint32_t ytotal = op->y_size + op->y_pad_0 + op->y_pad_1;
+        uint64_t sram_end = op->sram_base + xtotal * ytotal;
+        CHECK_LE(sram_end, kMaxNumElem);
+        memset(sram_ptr, 0, kElemBytes * xtotal * op->y_pad_0);
+        sram_ptr += xtotal * op->y_pad_0;
 
-    for (uint32_t y = 0; y < op->y_size; ++y) {
-      memset(sram_ptr, 0, kElemBytes * op->x_pad_0);
-      sram_ptr += op->x_pad_0;
-      memcpy(sram_ptr, dram_ptr, kElemBytes * op->x_size);
-      sram_ptr += op->x_size;
-      memset(sram_ptr, 0, kElemBytes * op->x_pad_1);
-      sram_ptr += op->x_pad_1;
-      dram_ptr += kElemBytes * op->x_stride;
+        for (uint32_t y = 0; y < op->y_size; ++y)
+        {
+            memset(sram_ptr, 0, kElemBytes * op->x_pad_0);
+            sram_ptr += op->x_pad_0;
+            memcpy(sram_ptr, dram_ptr, kElemBytes * op->x_size);
+            sram_ptr += op->x_size;
+            memset(sram_ptr, 0, kElemBytes * op->x_pad_1);
+            sram_ptr += op->x_pad_1;
+            dram_ptr += kElemBytes * op->x_stride;
+        }
+
+        memset(sram_ptr, 0, kElemBytes * xtotal * op->y_pad_1);
     }
-    memset(sram_ptr, 0, kElemBytes * xtotal * op->y_pad_1);
-  }
 
   // This is for load 8bits to ACC only
   void Load_int8(const VTAMemInsn* op,
@@ -454,8 +457,13 @@ class Device {
       wgt_.Load(op, dram_, &(prof_->wgt_load_nbytes), prof_->SkipExec());
 
       /* (experimental) */
+      printf("LOAD WGT: %llu bytes\n", (unsigned long long)op->x_size * op->y_size * VTA_WGT_ELEM_BYTES);
+
+      /* (experimental) */
     } else if (op->memory_type == VTA_MEM_ID_WGT_DIAG) {
         wgt_.LoadCompact(op, dram_, &(prof_->wgt_load_nbytes), prof_->SkipExec(), VTA_WGT_DIAG_ELEM_BYTES);
+        printf("LOAD WGT_DIAG: %llu bytes\n", (unsigned long long)op->x_size * op->y_size * VTA_WGT_DIAG_ELEM_BYTES);
+
 
     } else if (op->memory_type == VTA_MEM_ID_ACC) {
       acc_.Load(op, dram_, &(prof_->acc_load_nbytes), prof_->SkipExec());
@@ -523,42 +531,20 @@ class Device {
             BitPacker<VTA_INP_WIDTH> inp(inp_.BeginPtr(inp_idx));
             BitPacker<VTA_WGT_WIDTH> wgt(wgt_.BeginPtr(wgt_idx));
 
-            /*
-            // gemm loop
-            for (uint32_t i = 0; i < VTA_BATCH; ++i) {
-              for (uint32_t j = 0; j < VTA_BLOCK_OUT; ++j) {
-                uint32_t acc_offset = i * VTA_BLOCK_OUT + j;
-                int32_t sum = acc.GetSigned(acc_offset);
-                for (uint32_t k = 0; k < VTA_BLOCK_IN; ++k) {
-                  sum +=
-                      inp.GetSigned(i * VTA_BLOCK_IN + k) *
-                      wgt.GetSigned(j * VTA_BLOCK_IN + k);
-                }
-                acc.SetSigned(acc_offset, sum);
-              }
-            }
-            */
-
             // (experimental)
             // gemm loop
             if (op->opcode == VTA_OPCODE_GEMM_DIAG)
             {
                 BitPacker<VTA_WGT_WIDTH> wgt_diag(wgt_.BeginBytePtr(wgt_idx * VTA_WGT_DIAG_ELEM_BYTES));
-
-                for (uint32_t i = 0; i < VTA_BATCH; ++i)
-                {
-                    for (uint32_t j = 0; j < VTA_BLOCK_OUT; ++j)
-                    {
-                        uint32_t acc_offset;
-                        acc_offset = i * VTA_BLOCK_OUT + j;
-
-                        int32_t sum;
-                        sum = acc.GetSigned(acc_offset);
-
-                        sum += inp.GetSigned(i * VTA_BLOCK_IN + j) * wgt_diag.GetSigned(j);
+                for (uint32_t i = 0; i < VTA_BATCH; ++i) {
+                    for (uint32_t j = 0; j < VTA_BLOCK_OUT; ++j) {
+                        uint32_t acc_offset = i * VTA_BLOCK_OUT + j;
+                        int32_t sum = acc.GetSigned(acc_offset);
+                        sum +=
+                            inp.GetSigned(i * VTA_BLOCK_IN + j) *
+                            wgt_diag.GetSigned(j);
 
                         prof_->diag_mac_counter++;
-
                         acc.SetSigned(acc_offset, sum);
                     }
                 }
